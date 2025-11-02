@@ -1,0 +1,30 @@
+name: smartpay
+description: A smart payment Flutter app with Firebase integration.
+publish_to: "none" 
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: ^4.2.0
+  firebase_auth: ^6.1.1
+  cloud_firestore: ^5.4.2
+  firebase_storage: ^13.0.3
+  firebase_analytics: ^11.1.0
+  font_awesome_flutter: ^10.12.0
+  provider: ^6.1.2
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
