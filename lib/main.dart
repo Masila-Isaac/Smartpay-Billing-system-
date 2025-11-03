@@ -20,10 +20,10 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      initialRoute: '/Dashboard',
+      initialRoute: '/dashboard',
       routes: {
-        //'/signup': (context) => const SignUpScreen(),
-        //'/login': (context) => const LoginScreen(),
+        '/signup': (context) => const SignUpScreen(),
+        '/login': (context) => const LoginScreen(),
         '/dashboard': (context) => const Dashboard(),
         '/viewreport': (context) => const ViewReport(),
       },

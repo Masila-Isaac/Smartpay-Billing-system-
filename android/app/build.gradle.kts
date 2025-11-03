@@ -40,12 +40,15 @@ flutter {
 }
 
 dependencies {
-    // Import the Firebase BoM (Bill of Materials)
-    implementation(platform("com.google.firebase:firebase-bom:34.5.0"))
+    // Import the Firebase BoM (using a stable version)
+    implementation(platform("com.google.firebase:firebase-bom:30.3.1"))
 
-    // Add the Firebase products you need
-    implementation("com.google.firebase:firebase-analytics-ktx")
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-storage-ktx")
+    // When using the BoM, you don't specify versions in Firebase library dependencies
+    implementation("com.google.firebase:firebase-analytics:20.1.2")
+    implementation("com.google.firebase:firebase-auth:21.0.6")
+    implementation("com.google.firebase:firebase-firestore:24.2.1")
+    implementation("com.google.firebase:firebase-storage:20.0.1")
+
+    // Add Kotlin stdlib (using a more compatible version)
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.7.10")
 }
