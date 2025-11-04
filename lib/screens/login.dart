@@ -81,7 +81,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(height: 30),
 
-            // Input fields
+            // Inputs
             _buildTextField(
               controller: emailController,
               hint: "Phone/Email",

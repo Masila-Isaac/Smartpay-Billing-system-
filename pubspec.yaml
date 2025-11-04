@@ -13,10 +13,13 @@ dependencies:
   provider: ^6.1.2
   cupertino_icons: ^1.0.8
   firebase_core: ^2.15.1
-  firebase_auth: ^4.9.0
+  firebase_auth: ^4.8.0     # Pinned to an earlier stable version
   cloud_firestore: ^4.9.1
-  firebase_storage: ^11.2.6
+  firebase_storage: ^11.2.4   # Pinned to an earlier stable version
   firebase_analytics: ^10.4.5
+  js: ^0.7.0
+  web: ^0.5.1
+
 
 dev_dependencies:
   flutter_test:
