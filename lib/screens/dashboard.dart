@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'viewreport.dart';
 
 class Dashboard extends StatelessWidget {
   const Dashboard({super.key});
@@ -33,20 +34,26 @@ class Dashboard extends StatelessWidget {
               const SizedBox(height: 20),
 
               // Buttons (no icons)
-              _buildMenuButton("Units available for usage"),
+              _buildMenuButton(context, "Units available for usage", () {}),
               const SizedBox(height: 12),
-              _buildMenuButton("Make Payments"),
+              _buildMenuButton(context, "Make Payments", () {}),
               const SizedBox(height: 12),
-              _buildMenuButton("Water Reading"),
+              _buildMenuButton(context, "Water Reading", () {}),
               const SizedBox(height: 12),
-              _buildMenuButton("View Statements"),
+
+              _buildMenuButton(context, "View Statements", () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ViewReport()),
+                );
+              }),
 
               const SizedBox(height: 24),
 
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: Image.asset(
-                  "assets/images/waterhand.jpg", // the hand wit water image
+                  "assets/images/waterhand.jpg", // the hand with water image
                   fit: BoxFit.cover,
                 ),
               ),
@@ -58,14 +65,13 @@ class Dashboard extends StatelessWidget {
   }
 
   // Custom button widget (no icons)
-  Widget _buildMenuButton(String title) {
+  Widget _buildMenuButton(
+      BuildContext context, String title, VoidCallback onPressed) {
     return SizedBox(
       width: double.infinity,
       height: 55,
       child: ElevatedButton(
-        onPressed: () {
-          // Add navigation logic
-        },
+        onPressed: onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.black,
           shape: RoundedRectangleBorder(
