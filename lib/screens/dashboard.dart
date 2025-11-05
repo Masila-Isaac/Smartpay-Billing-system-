@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:smartpay/screens/payment.dart';
 import 'viewreport.dart';
 
 class Dashboard extends StatelessWidget {
@@ -36,7 +37,12 @@ class Dashboard extends StatelessWidget {
               // Buttons (no icons)
               _buildMenuButton(context, "Units available for usage", () {}),
               const SizedBox(height: 12),
-              _buildMenuButton(context, "Make Payments", () {}),
+              _buildMenuButton(context, "Make Payments", () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => MpesaDetailsForm()),
+                );
+              }),
               const SizedBox(height: 12),
               _buildMenuButton(context, "Water Reading", () {}),
               const SizedBox(height: 12),
