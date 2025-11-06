@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:smartpay/screens/paybill_screen.dart';
 import 'package:smartpay/screens/payment.dart';
 import 'viewreport.dart';
 
@@ -40,7 +41,8 @@ class Dashboard extends StatelessWidget {
               _buildMenuButton(context, "Make Payments", () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => MpesaDetailsForm()),
+                  MaterialPageRoute(
+                      builder: (context) => const PayBillScreen()),
                 );
               }),
               const SizedBox(height: 12),

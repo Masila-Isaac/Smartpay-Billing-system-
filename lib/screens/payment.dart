@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 class MpesaDetailsForm extends StatefulWidget {
+  const MpesaDetailsForm({super.key});
+
   @override
   _MpesaDetailsFormState createState() => _MpesaDetailsFormState();
 }
@@ -19,14 +21,14 @@ class _MpesaDetailsFormState extends State<MpesaDetailsForm> {
           children: [
             TextFormField(
               controller: phoneController,
-              decoration: InputDecoration(labelText: 'Phone Number'),
+              decoration: const InputDecoration(labelText: 'Phone Number'),
             ),
             TextFormField(
               controller: accountNumberController,
-              decoration: InputDecoration(labelText: 'Account Number'),
+              decoration: const InputDecoration(labelText: 'Account Number'),
             ),
             DropdownButtonFormField(
-              value: accountTypeController.text,
+              initialValue: accountTypeController.text,
               onChanged: (value) {
                 accountTypeController.text = value!;
               },
@@ -35,17 +37,17 @@ class _MpesaDetailsFormState extends State<MpesaDetailsForm> {
                 'Business',
               ].map((value) {
                 return DropdownMenuItem(
-                  child: Text(value),
                   value: value,
+                  child: Text(value),
                 );
               }).toList(),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () {
                 // Send M-Pesa payment request
               },
-              child: Text('Pay Now'),
+              child: const Text('Pay Now'),
             ),
           ],
         ),

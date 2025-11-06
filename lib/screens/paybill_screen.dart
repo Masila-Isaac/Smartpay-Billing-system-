@@ -47,7 +47,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
                   keyboardType: TextInputType.number,
                 ),
                 DropdownButtonFormField(
-                  value: accountType,
+                  initialValue: accountType,
                   decoration: const InputDecoration(labelText: 'Account Type'),
                   items: const [
                     DropdownMenuItem(

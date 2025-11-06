@@ -4,17 +4,19 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 
 const app = express();
-app.use(cors());
+
+// ✅ Enable CORS for all requests
+app.use(cors({ origin: "*" }));
 app.use(bodyParser.json());
 
-// M-Pesa sandbox credentials
+// ✅ M-Pesa sandbox credentials
 const consumerKey = "K7IC57RapWZk1DRfRudx9vrtjorrwch4rthRG0rEK6GoC6aJ";
 const consumerSecret = "4mlSkx39UItTGy3wqppv5CITHMgu5eUycqbGkni60n7POzd3xVu5oQ1st6ImuHfh";
-const shortcode = "174379"; // default sandbox paybill
+const shortcode = "174379"; // Default sandbox paybill
 const passkey = "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919";
-const callbackUrl = "https://mydomain.com/mpesa/callback"; // for now just dummy
+const callbackUrl = "https://mydomain.com/mpesa/callback"; // Dummy for now
 
-// Get access token
+// ✅ Generate access token
 async function getAccessToken() {
     const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
     const response = await axios.get(
@@ -24,13 +26,16 @@ async function getAccessToken() {
     return response.data.access_token;
 }
 
-// STK Push endpoint
+// ✅ STK Push endpoint
 app.post("/mpesa/stkpush", async (req, res) => {
     try {
         const { phoneNumber, amount, accountRef } = req.body;
         const token = await getAccessToken();
 
-        const timestamp = new Date().toISOString().replace(/[-T:.Z]/g, "").slice(0, 14);
+        const timestamp = new Date()
+            .toISOString()
+            .replace(/[-T:.Z]/g, "")
+            .slice(0, 14);
         const password = Buffer.from(shortcode + passkey + timestamp).toString("base64");
 
         const payload = {
@@ -60,11 +65,12 @@ app.post("/mpesa/stkpush", async (req, res) => {
     }
 });
 
-// Callback (for sandbox testing)
+// ✅ Callback route for testing
 app.post("/mpesa/callback", (req, res) => {
     console.log("Callback received:", JSON.stringify(req.body, null, 2));
     res.json({ ResultCode: 0, ResultDesc: "Accepted" });
 });
 
+// ✅ Start the server
 const PORT = 5000;
 app.listen(PORT, () => console.log(`✅ M-Pesa backend running on port ${PORT}`));

@@ -1,5 +1,6 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:io';
 
 class MpesaService {
   static Future<String?> initiatePayment({
@@ -7,25 +8,40 @@ class MpesaService {
     required double amount,
     required String accountRef,
   }) async {
-    // For local testing, use 10.0.2.2 for Android emulator
-    // If using real device, use your PC’s IP (e.g. http://192.168.1.10:5000)
-    const String backendUrl = "http://10.0.2.2:5000/mpesa/stkpush";
+    // ✅ Use correct backend base URL based on environment
+    String backendUrl;
 
-    final response = await http.post(
-      Uri.parse(backendUrl),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'phoneNumber': phone,
-        'amount': amount,
-        'accountRef': accountRef,
-      }),
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['ResponseDescription'] ?? "STK Push initiated";
+    if (Platform.isAndroid) {
+      // For Android emulator → use 10.0.2.2
+      backendUrl = "http://10.0.2.2:5000/mpesa/stkpush";
+    } else if (Platform.isIOS) {
+      // For iOS simulator
+      backendUrl = "http://localhost:5000/mpesa/stkpush";
     } else {
-      throw Exception("Failed: ${response.statusCode} - ${response.body}");
+      // For Flutter Web or physical device → use your computer's local IP
+      // e.g., replace 192.168.x.x with your PC IP from `ipconfig`
+      backendUrl = "http://192.168.0.105:5000/mpesa/stkpush"; // <-- CHANGE THIS
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse(backendUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'phoneNumber': phone,
+          'amount': amount,
+          'accountRef': accountRef,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['ResponseDescription'] ?? "STK Push initiated successfully";
+      } else {
+        throw Exception("Failed: ${response.statusCode} - ${response.body}");
+      }
+    } catch (e) {
+      throw Exception("Connection error: $e");
     }
   }
 }
