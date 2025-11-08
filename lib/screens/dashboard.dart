@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:smartpay/screens/paybill_screen.dart';
-import 'package:smartpay/screens/payment.dart';
 import 'viewreport.dart';
 
 class Dashboard extends StatelessWidget {

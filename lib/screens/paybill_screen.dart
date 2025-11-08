@@ -33,7 +33,8 @@ class _PayBillScreenState extends State<PayBillScreen> {
                 TextFormField(
                   controller: phoneController,
                   decoration: const InputDecoration(
-                      labelText: 'Phone Number (e.g. 254712345678)'),
+                    labelText: 'Phone Number (e.g. 07xxxxxxxx or 2547xxxxxxxx)',
+                  ),
                   keyboardType: TextInputType.phone,
                 ),
                 TextFormField(
@@ -47,7 +48,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
                   keyboardType: TextInputType.number,
                 ),
                 DropdownButtonFormField(
-                  initialValue: accountType,
+                  value: accountType,
                   decoration: const InputDecoration(labelText: 'Account Type'),
                   items: const [
                     DropdownMenuItem(
@@ -66,8 +67,10 @@ class _PayBillScreenState extends State<PayBillScreen> {
                           minimumSize: const Size(double.infinity, 50),
                         ),
                         onPressed: _handlePayment,
-                        child: const Text('Pay Now',
-                            style: TextStyle(fontSize: 18)),
+                        child: const Text(
+                          'Pay Now',
+                          style: TextStyle(fontSize: 18),
+                        ),
                       ),
               ],
             ),
@@ -77,6 +80,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
     );
   }
 
+  // ✅ Updated Payment Handler with Full Phone Validation
   Future<void> _handlePayment() async {
     final phone = phoneController.text.trim();
     final account = accountNumberController.text.trim();
@@ -89,10 +93,29 @@ class _PayBillScreenState extends State<PayBillScreen> {
       return;
     }
 
-    if (!RegExp(r'^2547\d{8}$').hasMatch(phone)) {
+    String formattedPhone = phone;
+
+    // ✅ Format the number to Safaricom standard 254XXXXXXXXX
+    if (phone.startsWith('0')) {
+      formattedPhone = '254${phone.substring(1)}';
+    } else if (phone.startsWith('7') && phone.length == 9) {
+      formattedPhone = '254$phone';
+    } else if (phone.startsWith('1') && phone.length == 9) {
+      formattedPhone = '254$phone';
+    } else if (!phone.startsWith('254')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text("Enter valid Safaricom number (e.g. 254712345678)")),
+          content:
+              Text("Enter a valid Kenyan number (07..., 01..., or 2547...)"),
+        ),
+      );
+      return;
+    }
+
+    // ✅ Validate final Safaricom format
+    if (!RegExp(r'^254(7|1)\d{8}$').hasMatch(formattedPhone)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Invalid Safaricom number format")),
       );
       return;
     }
@@ -101,7 +124,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
 
     try {
       final message = await MpesaService.initiatePayment(
-        phone: phone,
+        phone: formattedPhone, // ✅ Use formatted version
         amount: amount,
         accountRef: account,
       );
