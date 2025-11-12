@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:smartpay/screens/paybill_screen.dart';
+
 import 'viewreport.dart';
 
 class Dashboard extends StatelessWidget {
@@ -24,39 +24,31 @@ class Dashboard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 20),
-
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: Image.asset(
-                  "assets/images/waterglobe.jpg", // water globe image
+                  "assets/images/waterglobe.jpg",
                   fit: BoxFit.cover,
                 ),
               ),
               const SizedBox(height: 20),
-
-              // Buttons (no icons)
-              _buildMenuButton(context, "Units available for usage", () {}),
+              _buildMenuButton(context, "Units available for usage", () {
+                Navigator.pushNamed(context, '/waterusage');
+              }),
               const SizedBox(height: 12),
               _buildMenuButton(context, "Make Payments", () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => const PayBillScreen()),
-                );
+                Navigator.pushNamed(context, '/paymentoptions');
               }),
               const SizedBox(height: 12),
               _buildMenuButton(context, "Water Reading", () {}),
               const SizedBox(height: 12),
-
               _buildMenuButton(context, "View Statements", () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const ViewReport()),
                 );
               }),
-
               const SizedBox(height: 24),
-
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: Image.asset(

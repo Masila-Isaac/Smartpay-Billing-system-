@@ -5,11 +5,16 @@ import 'package:smartpay/screens/login.dart';
 import 'package:smartpay/screens/signup.dart';
 import 'package:smartpay/screens/dashboard.dart';
 import 'package:smartpay/screens/viewreport.dart';
+import 'package:smartpay/screens/splashscreen.dart';
+import 'package:smartpay/screens/get_started_screen.dart';
+import 'package:smartpay/screens/water_usage_screen.dart';
+import 'package:smartpay/screens/payment_options_screen.dart';
+
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // firebase initializations
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -26,16 +31,21 @@ class MyApp extends StatelessWidget {
       title: 'SmartPay',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueAccent),
         useMaterial3: true,
       ),
-      // routes to specificant files
-      initialRoute: '/signup',
+      
+      home: const SplashScreen(),
       routes: {
-        '/signup': (context) => const SignUpScreen(),
+        '/getstarted': (context) => const GetStartedScreen(),
         '/login': (context) => const LoginScreen(),
+        '/signup': (context) => const SignUpScreen(),
         '/dashboard': (context) => const Dashboard(),
         '/viewreport': (context) => const ViewReport(),
+        '/paymentoptions': (context) => const PaymentOptionsScreen(),
+
+        '/waterusage': (context) => const WaterUsageScreen(),
+
       },
     );
   }
