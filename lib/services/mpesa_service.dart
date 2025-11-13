@@ -4,10 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MpesaService {
   // ✅ Change this to your laptop's IP or ngrok URL
-  static const String _baseUrl = 'http://10.10.17.4:5000';
+  static const String _baseUrl =
+      'http://10.10.75.177:5000'; //change every time you have to run for you own good
   static const String _callbackUrl = "https://abcd1234.ngrok.io/mpesa/callback";
 
   // For Android emulator use 10.0.2.2, for iOS simulator 127.0.0.1
+
   // static const String _baseUrl = 'http://10.0.2.2:5000';
 
   /// Initiates M-Pesa STK Push payment

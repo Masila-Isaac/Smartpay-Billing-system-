@@ -1,0 +1,36 @@
+mutation CreateUser @auth(level: USER) {
+  user_insert(data: {
+    username: "newuser",
+    email: "newuser@example.com",
+    passwordHash: "hashedpassword",
+    displayName: "New User",
+    createdAt_expr: "request.time"
+  })
+}
+
+query GetMyBills @auth(level: USER) {
+  bills(where: {userId: {eq_expr: "auth.uid"}}) {
+    id
+    amountDue
+    dueDate
+    status
+  }
+}
+
+mutation PayBill($billId: UUID!, $amountPaid: Float!, $paymentMethod: String!, $transactionId: String!) @auth(level: USER) {
+  payment_insert(data: {
+    billId: $billId,
+    amountPaid: $amountPaid,
+    paymentDate_expr: "request.time",
+    paymentMethod: $paymentMethod,
+    transactionId: $transactionId
+  })
+}
+
+query ListAllUsers @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public") {
+  users {
+    id
+    username
+    email
+  }
+}

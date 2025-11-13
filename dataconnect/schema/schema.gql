@@ -1,0 +1,44 @@
+type User @table {
+  username: String!
+  passwordHash: String!
+  displayName: String!
+  email: String!
+  createdAt: Timestamp!
+  address: String
+  phoneNumber: String
+}
+
+type Meter @table {
+  meterNumber: String!
+  installationDate: Date!
+  status: String!
+  locationDescription: String
+  user: User
+}
+
+type Reading @table {
+  meterReading: Float!
+  readingDate: Timestamp!
+  meter: Meter
+}
+
+type Bill @table {
+  billNumber: String!
+  issueDate: Date!
+  dueDate: Date!
+  amountDue: Float!
+  status: String!
+  consumptionPeriodStart: Date
+  consumptionPeriodEnd: Date
+  previousReading: Float
+  currentReading: Float
+  user: User
+}
+
+type Payment @table {
+  paymentDate: Timestamp!
+  amountPaid: Float!
+  paymentMethod: String!
+  transactionId: String!
+  bill: Bill
+}

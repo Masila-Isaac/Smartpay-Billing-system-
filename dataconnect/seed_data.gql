@@ -1,0 +1,98 @@
+mutation CreateDemoData @transaction @auth(level: USER, insecureReason: "This operation is used to populate the database with seed data. No user-specific data is being accessed or modified.") {
+  user_insertMany(data: [
+    {
+      id: "550e8400-e29b-41d4-a716-446655440000",
+      username: "demouser1",
+      email: "demouser1@example.com",
+      displayName: "Demo User 1",
+      passwordHash: "somehash1",
+      createdAt: "2024-01-01T00:00:00Z"
+    },
+    {
+      id: "550e8400-e29b-41d4-a716-446655440001",
+      username: "demouser2",
+      email: "demouser2@example.com",
+      displayName: "Demo User 2",
+      passwordHash: "somehash2",
+      createdAt: "2024-01-02T00:00:00Z"
+    }
+  ])
+  meter_insertMany(data: [
+    {
+      id: "650e8400-e29b-41d4-a716-446655440000",
+      userId: "550e8400-e29b-41d4-a716-446655440000",
+      meterNumber: "12345",
+      status: "active",
+      installationDate: "2024-01-03",
+      locationDescription: "Home"
+    },
+    {
+      id: "650e8400-e29b-41d4-a716-446655440001",
+      userId: "550e8400-e29b-41d4-a716-446655440001",
+      meterNumber: "67890",
+      status: "active",
+      installationDate: "2024-01-04",
+      locationDescription: "Apartment"
+    }
+  ])
+  reading_insertMany(data: [
+    {
+      id: "750e8400-e29b-41d4-a716-446655440000",
+      meterId: "650e8400-e29b-41d4-a716-446655440000",
+      meterReading: 100.0,
+      readingDate: "2024-01-05T12:00:00Z"
+    },
+    {
+      id: "750e8400-e29b-41d4-a716-446655440001",
+      meterId: "650e8400-e29b-41d4-a716-446655440001",
+      meterReading: 200.0,
+      readingDate: "2024-01-06T12:00:00Z"
+    }
+  ])
+  bill_insertMany(data: [
+    {
+      id: "850e8400-e29b-41d4-a716-446655440000",
+      userId: "550e8400-e29b-41d4-a716-446655440000",
+      billNumber: "bill1",
+      amountDue: 50.0,
+      dueDate: "2024-01-07",
+      issueDate: "2024-01-01",
+      status: "unpaid",
+      consumptionPeriodStart: "2023-12-01",
+      consumptionPeriodEnd: "2023-12-31",
+      currentReading: 100.0,
+      previousReading: 50.0
+    },
+    {
+      id: "850e8400-e29b-41d4-a716-446655440001",
+      userId: "550e8400-e29b-41d4-a716-446655440001",
+      billNumber: "bill2",
+      amountDue: 75.0,
+      dueDate: "2024-01-08",
+      issueDate: "2024-01-02",
+      status: "unpaid",
+      consumptionPeriodStart: "2023-12-01",
+      consumptionPeriodEnd: "2023-12-31",
+      currentReading: 200.0,
+      previousReading: 125.0
+    }
+  ])
+  payment_insertMany(data: [
+    {
+      id: "950e8400-e29b-41d4-a716-446655440000",
+      billId: "850e8400-e29b-41d4-a716-446655440000",
+      amountPaid: 50.0,
+      paymentDate: "2024-01-09T12:00:00Z",
+      paymentMethod: "credit_card",
+      transactionId: "trans1"
+    },
+    {
+      id: "950e8400-e29b-41d4-a716-446655440001",
+      billId: "850e8400-e29b-41d4-a716-446655440001",
+      amountPaid: 75.0,
+      paymentDate: "2024-01-10T12:00:00Z",
+      paymentMethod: "credit_card",
+      transactionId: "trans2"
+    }
+  ])
+}

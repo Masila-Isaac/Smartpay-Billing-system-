@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@dataconnect/admin-generated": "file:src/dataconnect-admin-generated",
     "firebase-admin": "^13.6.0"
   }
 }
