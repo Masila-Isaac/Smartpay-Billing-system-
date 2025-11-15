@@ -29,14 +29,16 @@ class DefaultFirebaseOptions {
     storageBucket: 'smartpay-9558e.firebasestorage.app',
   );
 
-  // Android Configuration
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyC0HsSHd3rAc6oH3yB8moa_vrHHud4oNtU',
     appId: '1:609566359109:android:a57c16eaa9ee4dffefad2c',
     messagingSenderId: '609566359109',
     projectId: 'smartpay-9558e',
+    databaseURL: 'https://smartpay-9558e-default-rtdb.firebaseio.com',
     storageBucket: 'smartpay-9558e.firebasestorage.app',
   );
+
+  // Android Configuration
 
   // iOS Configuration
   static const FirebaseOptions ios = FirebaseOptions(

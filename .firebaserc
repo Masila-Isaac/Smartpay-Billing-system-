@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "comradespent"
-  }
+    "default": "comradespent",
+    "smartpay": "smartpay-9558e"
+  },
+  "targets": {},
+  "etags": {}
 }

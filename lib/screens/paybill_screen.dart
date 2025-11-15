@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/mpesa_service.dart';
 
 class PayBillScreen extends StatefulWidget {
@@ -118,7 +119,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField(
-                      initialValue: accountType,
+                      value: accountType,
                       decoration: const InputDecoration(
                         labelText: 'Account Type',
                         prefixIcon: Icon(Icons.business_center),
@@ -192,16 +193,13 @@ class _PayBillScreenState extends State<PayBillScreen> {
     );
   }
 
-  // ✅ Payment Handler with Enhanced Error Handling
   Future<void> _handlePayment() async {
-    // Hide keyboard
     FocusScope.of(context).unfocus();
 
     final phone = phoneController.text.trim();
     final account = accountNumberController.text.trim();
     final amount = double.tryParse(amountController.text.trim()) ?? 0.0;
 
-    // Validation
     if (phone.isEmpty || account.isEmpty || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -212,14 +210,12 @@ class _PayBillScreenState extends State<PayBillScreen> {
       return;
     }
 
+    // Format phone number to 254XXXXXXXXX
     String formattedPhone = phone;
-
-    // ✅ Format phone number
     if (phone.startsWith('0')) {
       formattedPhone = '254${phone.substring(1)}';
-    } else if (phone.startsWith('7') && phone.length == 9) {
-      formattedPhone = '254$phone';
-    } else if (phone.startsWith('1') && phone.length == 9) {
+    } else if ((phone.startsWith('7') || phone.startsWith('1')) &&
+        phone.length == 9) {
       formattedPhone = '254$phone';
     } else if (!phone.startsWith('254')) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -232,7 +228,6 @@ class _PayBillScreenState extends State<PayBillScreen> {
       return;
     }
 
-    // ✅ Validate final Safaricom format
     if (!RegExp(r'^254(7|1)\d{8}$').hasMatch(formattedPhone)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -246,7 +241,20 @@ class _PayBillScreenState extends State<PayBillScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("You must be logged in to make a payment."),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
+
       final message = await MpesaService.initiatePayment(
+        userId: user.uid,
         phone: formattedPhone,
         amount: amount,
         accountRef: account,
@@ -259,7 +267,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
         ),
       );
 
-      // Clear form on success
+      // Clear form
       phoneController.clear();
       accountNumberController.clear();
       amountController.clear();

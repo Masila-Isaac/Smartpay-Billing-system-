@@ -1,22 +1,41 @@
 {
-  "emulators": {
+    "emulators": {
+        "dataconnect": {
+            "dataDir": "dataconnect/.dataconnect/pgliteData"
+        }
+    },
     "dataconnect": {
-      "dataDir": "dataconnect/.dataconnect/pgliteData"
+        "source": "dataconnect"
+    },
+    "firestore": {
+        "database": "(default)",
+        "location": "nam5",
+        "rules": "firestore.rules",
+        "indexes": "firestore.indexes.json"
+    },
+    "storage": {
+        "rules": "storage.rules"
+    },
+    "database": {
+        "rules": "database.rules.json"
+    },
+    "flutter": {
+        "platforms": {
+            "android": {
+                "default": {
+                    "projectId": "smartpay-9558e",
+                    "appId": "1:609566359109:android:a57c16eaa9ee4dffefad2c",
+                    "fileOutput": "android/app/google-services.json"
+                }
+            },
+            "dart": {
+                "lib/firebase_options.dart": {
+                    "projectId": "smartpay-9558e",
+                    "configurations": {
+                        "android": "1:609566359109:android:a57c16eaa9ee4dffefad2c"
+                    }
+                }
+            }
+        }
     }
-  },
-  "dataconnect": {
-    "source": "dataconnect"
-  },
-  "firestore": {
-    "database": "(default)",
-    "location": "nam5",
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
-  },
-  "storage": {
-    "rules": "storage.rules"
-  },
-  "database": {
-    "rules": "database.rules.json"
-  }
 }

@@ -1,4 +1,5 @@
-library dataconnect_generated;
+library;
+
 import 'package:firebase_data_connect/firebase_data_connect.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
@@ -11,34 +12,39 @@ part 'pay_bill.dart';
 
 part 'list_all_users.dart';
 
-
-
-
-
-
-
 class ExampleConnector {
-  
-  
-  CreateUserVariablesBuilder createUser () {
-    return CreateUserVariablesBuilder(dataConnect, );
+  CreateUserVariablesBuilder createUser() {
+    return CreateUserVariablesBuilder(
+      dataConnect,
+    );
   }
-  
-  
-  GetMyBillsVariablesBuilder getMyBills () {
-    return GetMyBillsVariablesBuilder(dataConnect, );
+
+  GetMyBillsVariablesBuilder getMyBills() {
+    return GetMyBillsVariablesBuilder(
+      dataConnect,
+    );
   }
-  
-  
-  PayBillVariablesBuilder payBill ({required String billId, required double amountPaid, required String paymentMethod, required String transactionId, }) {
-    return PayBillVariablesBuilder(dataConnect, billId: billId,amountPaid: amountPaid,paymentMethod: paymentMethod,transactionId: transactionId,);
+
+  PayBillVariablesBuilder payBill({
+    required String billId,
+    required double amountPaid,
+    required String paymentMethod,
+    required String transactionId,
+  }) {
+    return PayBillVariablesBuilder(
+      dataConnect,
+      billId: billId,
+      amountPaid: amountPaid,
+      paymentMethod: paymentMethod,
+      transactionId: transactionId,
+    );
   }
-  
-  
-  ListAllUsersVariablesBuilder listAllUsers () {
-    return ListAllUsersVariablesBuilder(dataConnect, );
+
+  ListAllUsersVariablesBuilder listAllUsers() {
+    return ListAllUsersVariablesBuilder(
+      dataConnect,
+    );
   }
-  
 
   static ConnectorConfig connectorConfig = ConnectorConfig(
     'us-central1',

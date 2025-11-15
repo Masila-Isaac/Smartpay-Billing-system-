@@ -1,33 +1,14 @@
 {
   "project_info": {
-    "project_number": "370589119595",
-    "firebase_url": "https://comradespent-default-rtdb.firebaseio.com",
-    "project_id": "comradespent",
-    "storage_bucket": "comradespent.firebasestorage.app"
+    "project_number": "609566359109",
+    "firebase_url": "https://smartpay-9558e-default-rtdb.firebaseio.com",
+    "project_id": "smartpay-9558e",
+    "storage_bucket": "smartpay-9558e.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:370589119595:android:903435e2cb5f9f8a45ad2e",
-        "android_client_info": {
-          "package_name": "com.example.comradespent"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyARuqKZs8vFytD3-RnxXzdxpYXyJbs_sW4"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:370589119595:android:f428d96f71f3ece245ad2e",
+        "mobilesdk_app_id": "1:609566359109:android:a57c16eaa9ee4dffefad2c",
         "android_client_info": {
           "package_name": "com.example.smartpay"
         }
@@ -35,7 +16,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyARuqKZs8vFytD3-RnxXzdxpYXyJbs_sW4"
+          "current_key": "AIzaSyC0HsSHd3rAc6oH3yB8moa_vrHHud4oNtU"
         }
       ],
       "services": {

@@ -1,19 +1,20 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class MpesaService {
-  // ✅ Change this to your laptop's IP or ngrok URL
+  // ✅ Node server URL
+  // Use ngrok URL for physical device or public testing
   static const String _baseUrl =
-      'http://10.10.75.177:5000'; //change every time you have to run for you own good
-  static const String _callbackUrl = "https://abcd1234.ngrok.io/mpesa/callback";
-
-  // For Android emulator use 10.0.2.2, for iOS simulator 127.0.0.1
-
-  // static const String _baseUrl = 'http://10.0.2.2:5000';
+      'https://unlaudable-samual-overconstantly.ngrok-free.dev';
+  // Use local IP for emulator testing
+  // static const String _baseUrl = 'http://10.10.226.251:5000';
 
   /// Initiates M-Pesa STK Push payment
+  /// userId: Firebase Auth UID of the logged-in user
   static Future<String?> initiatePayment({
+    required String userId,
     required String phone,
     required double amount,
     required String accountRef,
@@ -22,7 +23,7 @@ class MpesaService {
       print('🔄 Initiating payment to: $_baseUrl/mpesa/stkpush');
       print('📱 Phone: $phone, Amount: $amount, Account: $accountRef');
 
-      // POST request to your Node.js server
+      // POST request to Node.js server
       final response = await http
           .post(
             Uri.parse('$_baseUrl/mpesa/stkpush'),
@@ -47,12 +48,12 @@ class MpesaService {
         if (data['success'] == true) {
           // Save the transaction to Firestore as Pending
           await savePaymentToFirestore(
+            userId: userId,
             phone: phone,
             amount: amount,
             accountRef: accountRef,
             status: 'Pending',
-            transactionId:
-                data['CheckoutRequestID'] ?? '', // optional if returned
+            transactionId: data['CheckoutRequestID'] ?? '',
           );
 
           return data['CustomerMessage'] ?? 'Payment initiated successfully';
@@ -78,6 +79,7 @@ class MpesaService {
 
   /// Saves the payment transaction to Firestore
   static Future<void> savePaymentToFirestore({
+    required String userId,
     required String phone,
     required double amount,
     required String accountRef,
@@ -86,6 +88,7 @@ class MpesaService {
   }) async {
     try {
       await FirebaseFirestore.instance.collection('payments').add({
+        'userId': userId, // link payment to the user
         'phone': phone,
         'amount': amount,
         'accountRef': accountRef,
@@ -103,11 +106,8 @@ class MpesaService {
   static Future<bool> testConnection() async {
     try {
       final response = await http
-          .get(
-            Uri.parse('$_baseUrl/test'),
-          )
+          .get(Uri.parse('$_baseUrl/test'))
           .timeout(const Duration(seconds: 10));
-
       print('🔗 Server test response: ${response.statusCode}');
       return response.statusCode == 200;
     } catch (e) {
