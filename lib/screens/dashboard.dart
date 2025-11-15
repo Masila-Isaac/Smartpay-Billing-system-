@@ -25,42 +25,51 @@ class Dashboard extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
+              // Top image
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: Image.asset(
-                  "assets/images/waterglobe.jpg", // water globe image
+                  "assets/images/waterglobe.jpg",
                   fit: BoxFit.cover,
                 ),
               ),
               const SizedBox(height: 20),
 
-              // Buttons (no icons)
-              _buildMenuButton(context, "Units available for usage", () {}),
+              // Buttons
+              _buildMenuButton(context, "Units available for usage", () {
+                Navigator.pushNamed(context, '/waterusage');
+              }),
               const SizedBox(height: 12),
+
               _buildMenuButton(context, "Make Payments", () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (context) => const PayBillScreen()),
+                    builder: (context) => const PayBillScreen(),
+                  ),
                 );
               }),
               const SizedBox(height: 12),
+
               _buildMenuButton(context, "Water Reading", () {}),
               const SizedBox(height: 12),
 
               _buildMenuButton(context, "View Statements", () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const ViewReport()),
+                  MaterialPageRoute(
+                    builder: (context) => const ViewReport(),
+                  ),
                 );
               }),
 
               const SizedBox(height: 24),
 
+              // Bottom image
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: Image.asset(
-                  "assets/images/waterhand.jpg", // the hand with water image
+                  "assets/images/waterhand.jpg",
                   fit: BoxFit.cover,
                 ),
               ),
@@ -71,9 +80,12 @@ class Dashboard extends StatelessWidget {
     );
   }
 
-  // Custom button widget (no icons)
+  // Button widget
   Widget _buildMenuButton(
-      BuildContext context, String title, VoidCallback onPressed) {
+    BuildContext context,
+    String title,
+    VoidCallback onPressed,
+  ) {
     return SizedBox(
       width: double.infinity,
       height: 55,

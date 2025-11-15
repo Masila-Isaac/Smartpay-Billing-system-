@@ -29,6 +29,7 @@ const consumerKey = "K7IC57RapWZk1DRfRudx9vrtjorrwch4rthRG0rEK6GoC6aJ";
 const consumerSecret = "4mlSkx39UItTGy3wqppv5CITHMgu5eUycqbGkni60n7POzd3xVu5oQ1st6ImuHfh";
 const shortcode = "174379";
 const passkey = "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919";
+const callbackUrl = "https://unlaudable-samual-overconstantly.ngrok-free.dev/mpesa/callback";
 
 // ✅ Generate access token
 async function getAccessToken() {
@@ -36,7 +37,10 @@ async function getAccessToken() {
         const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
         const response = await axios.get(
             "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
-            { headers: { Authorization: `Basic ${auth}` }, timeout: 10000 }
+            {
+                headers: { Authorization: `Basic ${auth}` },
+                timeout: 10000
+            }
         );
         return response.data.access_token;
     } catch (error) {
@@ -50,16 +54,26 @@ app.post("/mpesa/stkpush", async (req, res) => {
     try {
         const { phoneNumber, amount, accountRef } = req.body;
 
+        // Validate input
         if (!phoneNumber || !amount || !accountRef) {
             return res.status(400).json({ success: false, error: "Missing required fields" });
         }
 
+        // Validate phone number format
         if (!/^254[17]\d{8}$/.test(phoneNumber)) {
             return res.status(400).json({ success: false, error: "Invalid phone number format" });
         }
 
+        console.log("Initiating STK Push for:", { phoneNumber, amount, accountRef });
+
         const token = await getAccessToken();
-        const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+        console.log("Access token received");
+
+        const timestamp = new Date()
+            .toISOString()
+            .replace(/[-:.]/g, "")
+            .slice(0, 14);
+
         const password = Buffer.from(shortcode + passkey + timestamp).toString("base64");
 
         const payload = {
@@ -67,23 +81,30 @@ app.post("/mpesa/stkpush", async (req, res) => {
             Password: password,
             Timestamp: timestamp,
             TransactionType: "CustomerPayBillOnline",
-            Amount: Math.round(amount),
+            Amount: Math.round(amount), // Ensure whole number
             PartyA: phoneNumber,
             PartyB: shortcode,
             PhoneNumber: phoneNumber,
-            CallBackURL: "https://unlaudable-samual-overconstantly.ngrok-free.dev/mpesa/callback", // your ngrok/public URL
-            AccountReference: accountRef.substring(0, 12),
+            CallBackURL: callbackUrl,
+            AccountReference: accountRef.substring(0, 12), // Max 12 chars
             TransactionDesc: "Water Bill Payment",
         };
+
+        console.log("Sending STK Push request:", payload);
 
         const response = await axios.post(
             "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
             payload,
             {
-                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-                timeout: 15000,
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json"
+                },
+                timeout: 15000
             }
         );
+
+        console.log("STK Push Response:", response.data);
 
         if (response.data.ResponseCode === "0") {
             // Save initial pending transaction to Firestore
@@ -96,19 +117,39 @@ app.post("/mpesa/stkpush", async (req, res) => {
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
             });
 
-            return res.json({
+            res.json({
                 success: true,
                 ResponseCode: response.data.ResponseCode,
                 ResponseDescription: response.data.ResponseDescription,
                 CustomerMessage: response.data.CustomerMessage,
-                CheckoutRequestID: response.data.CheckoutRequestID,
+                CheckoutRequestID: response.data.CheckoutRequestID
             });
         } else {
-            return res.status(400).json({ success: false, error: response.data.ResponseDescription });
+            res.status(400).json({
+                success: false,
+                error: response.data.ResponseDescription || "STK Push failed"
+            });
         }
+
     } catch (error) {
         console.error("STK Push Error:", error.response?.data || error.message);
-        res.status(500).json({ success: false, error: error.message });
+
+        if (error.response) {
+            // Safaricom API error
+            res.status(500).json({
+                success: false,
+                error: "Safaricom API Error",
+                details: error.response.data
+            });
+        } else if (error.code === 'ECONNREFUSED') {
+            res.status(500).json({ success: false, error: "Cannot connect to Safaricom API" });
+        } else {
+            res.status(500).json({
+                success: false,
+                error: "Failed to initiate STK Push",
+                message: error.message
+            });
+        }
     }
 });
 
@@ -154,5 +195,8 @@ app.get("/test", (req, res) => {
 // ✅ Start server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, "0.0.0.0", () => {
-    console.log(`✅ Server running on port ${PORT}`);
-}); S
+    console.log(`✅ M-Pesa backend running on port ${PORT}`);
+    console.log(`📍 Local: http://localhost:${PORT}`);
+    console.log(`📍 Network: http://10.10.13.194:${PORT}`);
+    console.log(`✅ Server is running and ready for requests!`);
+});

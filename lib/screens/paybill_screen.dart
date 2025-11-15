@@ -13,7 +13,6 @@ class _PayBillScreenState extends State<PayBillScreen> {
   final phoneController = TextEditingController();
   final accountNumberController = TextEditingController();
   final amountController = TextEditingController();
-  String accountType = 'Personal';
   bool _isLoading = false;
   bool _serverConnected = true;
 
@@ -43,153 +42,275 @@ class _PayBillScreenState extends State<PayBillScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // ✅ Added AppBar with Back Button
       appBar: AppBar(
-        title: const Text('Pay Water Bill'),
-        backgroundColor: Colors.blueAccent,
+        title: const Text(
+          'Pay Water Bill',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
+        ),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black87),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            // Server status indicator
-            if (!_serverConnected)
+
+      backgroundColor: Colors.white,
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 30),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Image.asset(
+                    'assets/images/logo.png',
+                    height: 40,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'SmartPay',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 25),
+
+              // Server status indicator
+              if (!_serverConnected)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[100],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning, color: Colors.orange[800]),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "Server not connected",
+                          style: TextStyle(color: Colors.orange[800]),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _testServerConnection,
+                        child: const Text("RETRY"),
+                      ),
+                    ],
+                  ),
+                ),
+
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.orange[100],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.orange),
+                  color: const Color(0xfff8f8f8),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
                 ),
-                child: Row(
-                  children: [
-                    Icon(Icons.warning, color: Colors.orange[800]),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        "Server not connected",
-                        style: TextStyle(color: Colors.orange[800]),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _testServerConnection,
-                      child: const Text("RETRY"),
-                    ),
-                  ],
-                ),
-              ),
-
-            // Payment form
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextFormField(
-                      controller: phoneController,
-                      decoration: const InputDecoration(
-                        labelText:
-                            'Phone Number (e.g. 07xxxxxxxx or 2547xxxxxxxx)',
-                        prefixIcon: Icon(Icons.phone),
-                      ),
-                      keyboardType: TextInputType.phone,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: accountNumberController,
-                      decoration: const InputDecoration(
-                        labelText: 'Account Number',
-                        prefixIcon: Icon(Icons.account_circle),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: amountController,
-                      decoration: const InputDecoration(
-                        labelText: 'Amount (KES)',
-                        prefixIcon: Icon(Icons.attach_money),
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField(
-                      value: accountType,
-                      decoration: const InputDecoration(
-                        labelText: 'Account Type',
-                        prefixIcon: Icon(Icons.business_center),
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'Personal',
-                          child: Text('Personal'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Business',
-                          child: Text('Business'),
-                        ),
-                      ],
-                      onChanged: (value) =>
-                          setState(() => accountType = value!),
-                    ),
-                    const SizedBox(height: 20),
-                    _isLoading
-                        ? const Column(
-                            children: [
-                              CircularProgressIndicator(),
-                              SizedBox(height: 16),
-                              Text('Processing payment...'),
-                            ],
-                          )
-                        : ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _serverConnected
-                                  ? Colors.blueAccent
-                                  : Colors.grey,
-                              minimumSize: const Size(double.infinity, 50),
-                            ),
-                            onPressed: _serverConnected ? _handlePayment : null,
-                            child: const Text(
-                              'Pay Now',
-                              style: TextStyle(fontSize: 18),
-                            ),
-                          ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Info section
-            const SizedBox(height: 20),
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Payment Information',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                    _buildDisplayOnlyField('Paybill No:', '123456'),
+                    const SizedBox(height: 12),
+                    _buildLabelTextField('Account Number:',
+                        controller: accountNumberController,
+                        hint: 'Enter your account number'),
+                    const SizedBox(height: 12),
+                    _buildLabelTextField('Amount Kes:',
+                        controller: amountController, hint: 'e.g. 1000'),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Phone Number:',
+                      style: TextStyle(fontSize: 14, color: Colors.black87),
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: phoneController,
+                      decoration: InputDecoration(
+                        hintText: 'Enter a valid Safaricom number',
+                        hintStyle: TextStyle(
+                            color: Colors.grey.shade500, fontSize: 14),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade400),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                      ),
+                      keyboardType: TextInputType.phone,
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _serverConnected
+                              ? const Color(0xff006ee6)
+                              : Colors.grey,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: _serverConnected && !_isLoading
+                            ? _handlePayment
+                            : null,
+                        child: _isLoading
+                            ? const CircularProgressIndicator(
+                                color: Colors.white)
+                            : const Text(
+                                'PAY NOW',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
                       ),
                     ),
-                    SizedBox(height: 8),
-                    Text('• Use Safaricom number (07... or 2547...)'),
-                    Text('• Ensure sufficient M-Pesa balance'),
-                    Text('• You will receive an STK push prompt'),
                   ],
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 20),
+              const Text(
+                'After you receive a successful reply from M-PESA, click the complete button below.',
+                style: TextStyle(fontSize: 13.5, color: Colors.black87),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Or follow instructions below',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                '1. Open your M-Pesa App or SIM Toolkit\n'
+                '2. Select Lipa na M-PESA\n'
+                '3. Choose Paybill\n'
+                '4. Enter Business Number: 123456\n'
+                '5. Enter Account Number: [Your Account Number]\n'
+                '6. Enter Amount: [Your Amount]\n'
+                '7. Enter your M-Pesa PIN and press OK\n'
+                '8. You\'ll receive a confirmation SMS shortly.',
+                style: TextStyle(
+                    fontSize: 13.5, color: Colors.black87, height: 1.5),
+              ),
+              const SizedBox(height: 30),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          side: const BorderSide(color: Colors.grey),
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(fontSize: 15, color: Colors.black87),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xff006ee6),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () {},
+                        child: const Text(
+                          'Complete',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _buildDisplayOnlyField(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(fontSize: 14, color: Colors.black87)),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLabelTextField(String label,
+      {required TextEditingController controller, required String hint}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(fontSize: 14, color: Colors.black87)),
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: controller,
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey.shade400),
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+          keyboardType: label.contains('Amount')
+              ? TextInputType.number
+              : TextInputType.text,
+        ),
+      ],
     );
   }
 
