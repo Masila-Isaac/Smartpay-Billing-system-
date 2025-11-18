@@ -11,37 +11,49 @@ class GetStartedScreen extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween, // space between top and bottom
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const SizedBox(), // top spacer
 
               // Centered logo and text
               Column(
                 children: [
-                  Image.asset(
-                    'assets/images/logo.png',
-                    height: 220, // much larger
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Image.asset(
+                      'assets/images/logo.png',
+                      height: 220,
+                    ),
                   ),
                   const SizedBox(height: 40),
                   const Text(
                     "SmartPay",
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 40, // larger text
-                      fontWeight: FontWeight.bold,
+                      fontSize: 42,
+                      fontWeight: FontWeight.w700,
                       color: Colors.black87,
-                      letterSpacing: -0.5,
+                      letterSpacing: -0.8,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   const Text(
                     "Keep the flow going",
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 20, // slightly larger subtitle
+                      fontSize: 18,
                       color: Colors.black54,
                       fontWeight: FontWeight.w400,
-                      letterSpacing: -0.3,
+                      letterSpacing: 0.2,
                     ),
                   ),
                 ],
@@ -49,19 +61,19 @@ class GetStartedScreen extends StatelessWidget {
 
               // Bottom button
               Padding(
-                padding: const EdgeInsets.only(bottom: 40.0), // add space from bottom edge
+                padding: const EdgeInsets.only(bottom: 50.0),
                 child: SizedBox(
                   width: double.infinity,
                   height: 60,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black87,
+                      backgroundColor: Colors.blueAccent,
+                      foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      elevation: 2,
-                      shadowColor: Colors.black12,
+                      elevation: 4,
+                      shadowColor: Colors.blueAccent.withOpacity(0.3),
                     ),
                     onPressed: () {
                       Navigator.pushReplacementNamed(context, '/login');
@@ -70,16 +82,16 @@ class GetStartedScreen extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          "Get started",
+                          "Get Started",
                           style: TextStyle(
-                            color: Colors.black87,
-                            fontSize: 18, // slightly larger button text
+                            color: Colors.white,
+                            fontSize: 18,
                             fontWeight: FontWeight.w600,
-                            letterSpacing: -0.3,
+                            letterSpacing: 0.5,
                           ),
                         ),
-                        SizedBox(width: 8),
-                        Icon(Icons.arrow_forward, color: Colors.black87, size: 22),
+                        SizedBox(width: 12),
+                        Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 22),
                       ],
                     ),
                   ),

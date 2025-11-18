@@ -20,7 +20,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1500),
     );
     _animation = Tween<double>(begin: 0, end: remainingPercent).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
@@ -34,49 +34,11 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
     super.dispose();
   }
 
-  Widget _tableCell(String text, bool isLabel) {
-    return Padding(
-      padding: const EdgeInsets.all(10.0),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontWeight: isLabel ? FontWeight.w600 : FontWeight.w400,
-          fontSize: 15,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildButton(BuildContext context, String text) {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: ElevatedButton(
-        onPressed: () {},
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF007AFF), // Blue color for all buttons
-          foregroundColor: Colors.white,
-          elevation: 3,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-
   // Get color based on position
   Color _getCircleColor(double value) {
-    if (value < 0.33) return Colors.red;
-    if (value < 0.66) return Colors.yellow.shade700;
-    return Colors.green;
+    if (value < 0.33) return const Color(0xFFFF3B30);
+    if (value < 0.66) return const Color(0xFFFF9500);
+    return const Color(0xFF34C759);
   }
 
   @override
@@ -90,173 +52,395 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
         title: const Text(
           "Water Usage",
           style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+            fontWeight: FontWeight.w700,
+            fontSize: 20,
           ),
         ),
-        iconTheme: const IconThemeData(color: Colors.black),
-      ),
-      body: Stack(
-        children: [
-          // Background watermark
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0.06,
-              child: Center(
-                child: Image.asset(
-                  'assets/images/logo.png',
-                  width: 260,
-                ),
-              ),
-            ),
+        iconTheme: const IconThemeData(color: Colors.black54),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline, size: 22),
+            onPressed: () {},
           ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header Card with Summary
+            _buildSummaryCard(),
+            const SizedBox(height: 32),
 
-          // Foreground content
-          SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            // Usage Progress Section
+            _buildProgressSection(),
+            const SizedBox(height: 32),
+
+            // Action Buttons
+            _buildActionButtons(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryCard() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF667eea),
+            Color(0xFF764ba2),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.purple.withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 15),
-
-                // Table
-                Table(
-                  border: TableBorder.all(color: Colors.grey.shade300),
-                  columnWidths: const {
-                    0: FlexColumnWidth(1.5),
-                    1: FlexColumnWidth(1),
-                  },
-                  children: [
-                    TableRow(children: [
-                      _tableCell("Total Units Used", true),
-                      _tableCell("18.6 m\u00B3", false),
-                    ]),
-                    TableRow(children: [
-                      _tableCell("Average Daily Usage", true),
-                      _tableCell("2.7 m\u00B3", false),
-                    ]),
-                    TableRow(children: [
-                      _tableCell("Remaining Units", true),
-                      _tableCell("12.58 m\u00B3", false),
-                    ]),
-                    TableRow(children: [
-                      _tableCell("Last Top-Up Date", true),
-                      _tableCell("01 Nov 2025", false),
-                    ]),
-                  ],
-                ),
-
-                const SizedBox(height: 30),
-
-                // Progress bar with moving circle
-                AnimatedBuilder(
-                  animation: _animation,
-                  builder: (context, child) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 20, horizontal: 18),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Column(
-                        children: [
-                          LayoutBuilder(
-                            builder: (context, constraints) {
-                              double barWidth = constraints.maxWidth;
-                              double circlePos = barWidth * _animation.value;
-                              Color circleColor =
-                                  _getCircleColor(_animation.value);
-
-                              return Stack(
-                                alignment: Alignment.centerLeft,
-                                children: [
-                                  // Background gradient bar
-                                  Container(
-                                    height: 16,
-                                    width: double.infinity,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(10),
-                                      gradient: const LinearGradient(
-                                        colors: [
-                                          Colors.red,
-                                          Colors.yellow,
-                                          Colors.green
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-
-                                  // Animated circle indicator
-                                  Positioned(
-                                    left: circlePos - 14,
-                                    child: Container(
-                                      width: 28,
-                                      height: 28,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: circleColor,
-                                        border: Border.all(
-                                          color: Colors.white,
-                                          width: 2.5,
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color:
-                                                circleColor.withOpacity(0.5),
-                                            blurRadius: 8,
-                                            spreadRadius: 2,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 10),
-                          const Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text("Low", style: TextStyle(fontSize: 13)),
-                              Text("Moderate", style: TextStyle(fontSize: 13)),
-                              Text("Full", style: TextStyle(fontSize: 13)),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 30),
-
                 const Text(
-                  "You have 12.58 m\u00B3 remaining\nEstimated 4 days left",
-                  textAlign: TextAlign.center,
+                  'Remaining Balance',
                   style: TextStyle(
-                    fontSize: 17,
+                    color: Colors.white70,
+                    fontSize: 14,
                     fontWeight: FontWeight.w500,
-                    color: Colors.black87,
                   ),
                 ),
-
-                const SizedBox(height: 40),
-
-                // Buttons
-                _buildButton(context, "Buy Units"),
-                const SizedBox(height: 16),
-                _buildButton(context, "View Statement"),
-                const SizedBox(height: 16),
-                _buildButton(context, "Set Usage Alert"),
-
-                const SizedBox(height: 40),
+                const SizedBox(height: 8),
+                const Text(
+                  '12.58 m³',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Estimated 4 days left',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ],
             ),
           ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.water_drop,
+              color: Colors.white,
+              size: 36,
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildProgressSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Usage Progress',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Track your water consumption',
+          style: TextStyle(
+            fontSize: 14,
+            color: Colors.grey[600],
+          ),
+        ),
+        const SizedBox(height: 20),
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.grey[100]!),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 15,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              AnimatedBuilder(
+                animation: _animation,
+                builder: (context, child) {
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      double barWidth = constraints.maxWidth;
+                      double circlePos = barWidth * _animation.value;
+                      Color circleColor = _getCircleColor(_animation.value);
+
+                      return Stack(
+                        alignment: Alignment.centerLeft,
+                        children: [
+                          // Background track
+                          Container(
+                            height: 16,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+
+                          // Progress fill
+                          Container(
+                            height: 16,
+                            width: barWidth * _animation.value,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  const Color(0xFFFF3B30),
+                                  const Color(0xFFFF9500),
+                                  const Color(0xFF34C759),
+                                ],
+                                stops: const [0.0, 0.5, 1.0],
+                              ),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+
+                          // Animated circle indicator
+                          Positioned(
+                            left: circlePos - 20,
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: circleColor,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 4,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: circleColor.withOpacity(0.5),
+                                    blurRadius: 12,
+                                    spreadRadius: 3,
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                Icons.water_drop,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
+              const SizedBox(height: 24),
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    children: [
+                      Icon(Icons.warning_amber, color: Color(0xFFFF3B30), size: 20),
+                      SizedBox(height: 6),
+                      Text(
+                        "Low",
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    children: [
+                      Icon(Icons.trending_up, color: Color(0xFFFF9500), size: 20),
+                      SizedBox(height: 6),
+                      Text(
+                        "Moderate",
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    children: [
+                      Icon(Icons.check_circle, color: Color(0xFF34C759), size: 20),
+                      SizedBox(height: 6),
+                      Text(
+                        "Full",
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionButtons() {
+    return Column(
+      children: [
+        const Text(
+          'Quick Actions',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Manage your water account',
+          style: TextStyle(
+            fontSize: 14,
+            color: Colors.grey[600],
+          ),
+        ),
+        const SizedBox(height: 20),
+        _buildActionButton(
+          icon: Icons.shopping_cart_outlined,
+          title: 'Buy Units',
+          subtitle: 'Purchase additional water units',
+          onTap: () {},
+          color: const Color(0xFF667eea),
+        ),
+        const SizedBox(height: 16),
+        _buildActionButton(
+          icon: Icons.receipt_long_outlined,
+          title: 'View Statement',
+          subtitle: 'Check your billing history',
+          onTap: () {},
+          color: const Color(0xFF34C759),
+        ),
+        const SizedBox(height: 16),
+        _buildActionButton(
+          icon: Icons.notifications_outlined,
+          title: 'Set Usage Alert',
+          subtitle: 'Get notified when usage is high',
+          onTap: () {},
+          color: const Color(0xFFFF9500),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    required Color color,
+  }) {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  icon,
+                  color: color,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 18,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

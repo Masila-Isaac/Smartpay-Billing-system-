@@ -1,0 +1,16 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Rounded background shape -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="24dp"/>
+            <solid android:color="#2196F3"/> <!-- your background color -->
+        </shape>
+    </item>
+
+    <!-- Your actual logo centered -->
+    <item>
+        <bitmap
+            android:src="@drawable/app_icon"
+            android:gravity="center" />
+    </item>
+</layer-list>
