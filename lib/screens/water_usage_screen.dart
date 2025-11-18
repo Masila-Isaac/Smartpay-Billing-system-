@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../services/mpesa_service.dart';
+import '../model/payment_model.dart';
+import '../model/water_usage_model.dart';
 
 class WaterUsageScreen extends StatefulWidget {
-  const WaterUsageScreen({super.key});
+  final String meterNumber;
+
+  const WaterUsageScreen({super.key, required this.meterNumber});
 
   @override
   State<WaterUsageScreen> createState() => _WaterUsageScreenState();
@@ -11,9 +18,9 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _animation;
-
-  // Example remaining percentage (0.0 = empty, 1.0 = full)
-  final double remainingPercent = 0.55;
+  WaterUsage? _waterUsage;
+  List<Payment> _paymentHistory = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -22,10 +29,44 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
-    _animation = Tween<double>(begin: 0, end: remainingPercent).animate(
+    _animation = Tween<double>(begin: 0, end: 0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
     );
-    _controller.forward();
+    _loadWaterData();
+  }
+
+  Future<void> _loadWaterData() async {
+    try {
+      // Load water usage from Firestore
+      final waterUsage = await MpesaService.getWaterUsage(widget.meterNumber);
+
+      // Load payment history
+      final payments = await MpesaService.getPaymentHistory(widget.meterNumber);
+
+      setState(() {
+        _waterUsage = waterUsage;
+        _paymentHistory = payments;
+        _isLoading = false;
+
+        // Update animation with real data
+        if (waterUsage != null && waterUsage.totalUnitsPurchased > 0) {
+          final remainingPercent =
+              waterUsage.remainingUnits / waterUsage.totalUnitsPurchased;
+          _animation =
+              Tween<double>(begin: 0, end: remainingPercent.clamp(0.0, 1.0))
+                  .animate(
+            CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+          );
+        }
+      });
+
+      _controller.forward();
+    } catch (e) {
+      print('Error loading water data: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -36,25 +77,27 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
 
   Widget _tableCell(String text, bool isLabel) {
     return Padding(
-      padding: const EdgeInsets.all(10.0),
+      padding: const EdgeInsets.all(12.0),
       child: Text(
         text,
         style: TextStyle(
           fontWeight: isLabel ? FontWeight.w600 : FontWeight.w400,
           fontSize: 15,
+          color: isLabel ? Colors.black87 : Colors.blue.shade700,
         ),
       ),
     );
   }
 
-  Widget _buildButton(BuildContext context, String text) {
+  Widget _buildButton(
+      BuildContext context, String text, VoidCallback onPressed) {
     return SizedBox(
       width: double.infinity,
       height: 52,
       child: ElevatedButton(
-        onPressed: () {},
+        onPressed: onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF007AFF), // Blue color for all buttons
+          backgroundColor: const Color(0xFF007AFF),
           foregroundColor: Colors.white,
           elevation: 3,
           shape: RoundedRectangleBorder(
@@ -72,24 +115,150 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
     );
   }
 
-  // Get color based on position
+  // Get color based on remaining percentage
   Color _getCircleColor(double value) {
-    if (value < 0.33) return Colors.red;
-    if (value < 0.66) return Colors.yellow.shade700;
+    if (value < 0.2) return Colors.red;
+    if (value < 0.5) return Colors.orange;
     return Colors.green;
+  }
+
+  String _calculateDaysLeft() {
+    if (_waterUsage == null || _waterUsage!.remainingUnits <= 0) return '0';
+
+    final averageDailyUsage = _waterUsage!.waterUsed > 0
+        ? _waterUsage!.waterUsed / 30 // Assuming 30 days of data
+        : 2.7; // Default average
+
+    final daysLeft = _waterUsage!.remainingUnits / averageDailyUsage;
+    return daysLeft.floor().toString();
+  }
+
+  void _navigateToBuyUnits() {
+    // Navigate to payment screen
+    // Navigator.push(
+    //   context,
+    //   MaterialPageRoute(
+    //     builder: (context) => PaymentScreen(meterNumber: widget.meterNumber),
+    //   ),
+    // );
+
+    // For now, show a dialog
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Buy Water Units'),
+        content:
+            Text('Navigate to payment screen for meter: ${widget.meterNumber}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _viewStatement() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Payment History'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: _paymentHistory.isEmpty
+              ? const Text('No payment history available')
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _paymentHistory.length,
+                  itemBuilder: (context, index) {
+                    final payment = _paymentHistory[index];
+                    return ListTile(
+                      leading: Icon(
+                        payment.isSuccessful
+                            ? Icons.check_circle
+                            : Icons.pending,
+                        color:
+                            payment.isSuccessful ? Colors.green : Colors.orange,
+                      ),
+                      title: Text('KES ${payment.amount.toStringAsFixed(2)}'),
+                      subtitle: Text(
+                          '${payment.unitsPurchased.toStringAsFixed(2)} L'),
+                      trailing: Text(
+                        payment.status,
+                        style: TextStyle(
+                          color: payment.isSuccessful
+                              ? Colors.green
+                              : Colors.orange,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _setUsageAlert() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Set Usage Alert'),
+        content: const Text(
+            'You will receive notifications when your water balance is low.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Usage alert set successfully')),
+              );
+              Navigator.pop(context);
+            },
+            child: const Text('Set Alert'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    final remainingUnits = _waterUsage?.remainingUnits ?? 0;
+    final waterUsed = _waterUsage?.waterUsed ?? 0;
+    final totalPurchased = _waterUsage?.totalUnitsPurchased ?? 0;
+    final remainingPercent =
+        totalPurchased > 0 ? remainingUnits / totalPurchased : 0;
+    final daysLeft = _calculateDaysLeft();
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
-        title: const Text(
-          "Water Usage",
-          style: TextStyle(
+        title: Text(
+          "Water Usage - ${widget.meterNumber}",
+          style: const TextStyle(
             color: Colors.black,
             fontWeight: FontWeight.bold,
           ),
@@ -101,11 +270,12 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
           // Background watermark
           Positioned.fill(
             child: Opacity(
-              opacity: 0.06,
+              opacity: 0.03,
               child: Center(
-                child: Image.asset(
-                  'assets/images/logo.png',
-                  width: 260,
+                child: Icon(
+                  Icons.water_drop,
+                  size: 260,
+                  color: Colors.blue.shade100,
                 ),
               ),
             ),
@@ -119,29 +289,32 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
               children: [
                 const SizedBox(height: 15),
 
-                // Table
+                // Water Usage Table
                 Table(
                   border: TableBorder.all(color: Colors.grey.shade300),
                   columnWidths: const {
-                    0: FlexColumnWidth(1.5),
+                    0: FlexColumnWidth(1.8),
                     1: FlexColumnWidth(1),
                   },
                   children: [
                     TableRow(children: [
                       _tableCell("Total Units Used", true),
-                      _tableCell("18.6 m\u00B3", false),
+                      _tableCell("${waterUsed.toStringAsFixed(1)} L", false),
                     ]),
                     TableRow(children: [
                       _tableCell("Average Daily Usage", true),
-                      _tableCell("2.7 m\u00B3", false),
+                      _tableCell(
+                          "${(waterUsed / 30).toStringAsFixed(1)} L", false),
                     ]),
                     TableRow(children: [
                       _tableCell("Remaining Units", true),
-                      _tableCell("12.58 m\u00B3", false),
+                      _tableCell(
+                          "${remainingUnits.toStringAsFixed(1)} L", false),
                     ]),
                     TableRow(children: [
-                      _tableCell("Last Top-Up Date", true),
-                      _tableCell("01 Nov 2025", false),
+                      _tableCell("Total Purchased", true),
+                      _tableCell(
+                          "${totalPurchased.toStringAsFixed(1)} L", false),
                     ]),
                   ],
                 ),
@@ -156,7 +329,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
                       padding: const EdgeInsets.symmetric(
                           vertical: 20, horizontal: 18),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
+                        color: Colors.grey.shade50,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: Colors.grey.shade300),
                       ),
@@ -181,7 +354,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
                                       gradient: const LinearGradient(
                                         colors: [
                                           Colors.red,
-                                          Colors.yellow,
+                                          Colors.orange,
                                           Colors.green
                                         ],
                                       ),
@@ -203,8 +376,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
                                         ),
                                         boxShadow: [
                                           BoxShadow(
-                                            color:
-                                                circleColor.withOpacity(0.5),
+                                            color: circleColor.withOpacity(0.5),
                                             blurRadius: 8,
                                             spreadRadius: 2,
                                           ),
@@ -233,10 +405,10 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
 
                 const SizedBox(height: 30),
 
-                const Text(
-                  "You have 12.58 m\u00B3 remaining\nEstimated 4 days left",
+                Text(
+                  "You have ${remainingUnits.toStringAsFixed(1)} L remaining\nEstimated $daysLeft days left",
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w500,
                     color: Colors.black87,
@@ -246,11 +418,11 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
                 const SizedBox(height: 40),
 
                 // Buttons
-                _buildButton(context, "Buy Units"),
+                _buildButton(context, "Buy Units", _navigateToBuyUnits),
                 const SizedBox(height: 16),
-                _buildButton(context, "View Statement"),
+                _buildButton(context, "View Statement", _viewStatement),
                 const SizedBox(height: 16),
-                _buildButton(context, "Set Usage Alert"),
+                _buildButton(context, "Set Usage Alert", _setUsageAlert),
 
                 const SizedBox(height: 40),
               ],
