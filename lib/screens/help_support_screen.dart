@@ -36,19 +36,23 @@ class HelpSupportScreen extends StatelessWidget {
 
             _buildFAQItem(
               question: 'How do I make a payment?',
-              answer: 'You can make payments through the Make Payments section in your dashboard using various payment methods.',
+              answer:
+                  'You can make payments through the Make Payments section in your dashboard using various payment methods.',
             ),
             _buildFAQItem(
               question: 'Where can I view my water usage?',
-              answer: 'Your water usage is available in the Units Available for Usage section with detailed consumption data.',
+              answer:
+                  'Your water usage is available in the Units Available for Usage section with detailed consumption data.',
             ),
             _buildFAQItem(
               question: 'How do I update my account information?',
-              answer: 'Go to Profile settings to update your personal information, address, and preferences.',
+              answer:
+                  'Go to Profile settings to update your personal information, address, and preferences.',
             ),
             _buildFAQItem(
               question: 'What payment methods are accepted?',
-              answer: 'We accept credit/debit cards, mobile money, and bank transfers for your convenience.',
+              answer:
+                  'We accept credit/debit cards, mobile money, and bank transfers for your convenience.',
             ),
 
             const SizedBox(height: 32),
@@ -349,7 +353,8 @@ class HelpSupportScreen extends StatelessWidget {
   }
 
   Future<void> _sendEmail(BuildContext context) async {
-    const email = 'mailto:support@smartpay.com?subject=Support Request&body=Hello, I need help with...';
+    const email =
+        'mailto:support@smartpay.com?subject=Support Request&body=Hello, I need help with...';
 
     try {
       if (await canLaunchUrl(Uri.parse(email))) {
