@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:smartpay/screens/paybill_screen.dart';
 import 'package:smartpay/screens/water_Reading.dart';
+import 'package:smartpay/screens/water_usage_screen.dart';
 import 'viewreport.dart';
 
 class Dashboard extends StatelessWidget {
@@ -56,9 +57,8 @@ class Dashboard extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const WaterReadingScreen(
-                      meterNumber: "12345678",
-                    ),
+                    builder: (context) =>
+                        const WaterUsageScreen(meterNumber: '123456'),
                   ),
                 );
               }),
