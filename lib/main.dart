@@ -66,8 +66,8 @@ class MyApp extends StatelessWidget {
         '/dashboard': (context) => const Dashboard(),
         '/viewreport': (context) => const ViewReport(),
         '/paymentoptions': (context) => const PaymentOptionsScreen(),
-        '/waterusage': (context) => const WaterUsageScreen(),
-        '/waterreading': (context) => const WaterReadingScreen(),
+        // Remove this line - WaterUsageScreen requires a parameter
+        // '/waterusage': (context) => const WaterUsageScreen(),
       },
     );
   }

@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../services/mpesa_service.dart';
+import '../model/payment_model.dart';
+import '../model/water_usage_model.dart';
 
 class WaterUsageScreen extends StatefulWidget {
-  const WaterUsageScreen({super.key});
+  final String meterNumber;
+
+  const WaterUsageScreen({super.key, required this.meterNumber});
 
   @override
   State<WaterUsageScreen> createState() => _WaterUsageScreenState();
@@ -11,9 +18,9 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _animation;
-
-  // Example remaining percentage (0.0 = empty, 1.0 = full)
-  final double remainingPercent = 0.55;
+  WaterUsage? _waterUsage;
+  List<Payment> _paymentHistory = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -22,10 +29,44 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
-    _animation = Tween<double>(begin: 0, end: remainingPercent).animate(
+    _animation = Tween<double>(begin: 0, end: 0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
     );
-    _controller.forward();
+    _loadWaterData();
+  }
+
+  Future<void> _loadWaterData() async {
+    try {
+      // Load water usage from Firestore
+      final waterUsage = await MpesaService.getWaterUsage(widget.meterNumber);
+
+      // Load payment history
+      final payments = await MpesaService.getPaymentHistory(widget.meterNumber);
+
+      setState(() {
+        _waterUsage = waterUsage;
+        _paymentHistory = payments;
+        _isLoading = false;
+
+        // Update animation with real data
+        if (waterUsage != null && waterUsage.totalUnitsPurchased > 0) {
+          final remainingPercent =
+              waterUsage.remainingUnits / waterUsage.totalUnitsPurchased;
+          _animation =
+              Tween<double>(begin: 0, end: remainingPercent.clamp(0.0, 1.0))
+                  .animate(
+            CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+          );
+        }
+      });
+
+      _controller.forward();
+    } catch (e) {
+      print('Error loading water data: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -41,8 +82,134 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
     return const Color(0xFF34C759);
   }
 
+  String _calculateDaysLeft() {
+    if (_waterUsage == null || _waterUsage!.remainingUnits <= 0) return '0';
+
+    final averageDailyUsage = _waterUsage!.waterUsed > 0
+        ? _waterUsage!.waterUsed / 30 // Assuming 30 days of data
+        : 2.7; // Default average
+
+    final daysLeft = _waterUsage!.remainingUnits / averageDailyUsage;
+    return daysLeft.floor().toString();
+  }
+
+  void _navigateToBuyUnits() {
+    // Navigate to payment screen
+    // Navigator.push(
+    //   context,
+    //   MaterialPageRoute(
+    //     builder: (context) => PaymentScreen(meterNumber: widget.meterNumber),
+    //   ),
+    // );
+
+    // For now, show a dialog
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Buy Water Units'),
+        content:
+            Text('Navigate to payment screen for meter: ${widget.meterNumber}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _viewStatement() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Payment History'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: _paymentHistory.isEmpty
+              ? const Text('No payment history available')
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _paymentHistory.length,
+                  itemBuilder: (context, index) {
+                    final payment = _paymentHistory[index];
+                    return ListTile(
+                      leading: Icon(
+                        payment.isSuccessful
+                            ? Icons.check_circle
+                            : Icons.pending,
+                        color:
+                            payment.isSuccessful ? Colors.green : Colors.orange,
+                      ),
+                      title: Text('KES ${payment.amount.toStringAsFixed(2)}'),
+                      subtitle: Text(
+                          '${payment.unitsPurchased.toStringAsFixed(2)} L'),
+                      trailing: Text(
+                        payment.status,
+                        style: TextStyle(
+                          color: payment.isSuccessful
+                              ? Colors.green
+                              : Colors.orange,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _setUsageAlert() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Set Usage Alert'),
+        content: const Text(
+            'You will receive notifications when your water balance is low.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Usage alert set successfully')),
+              );
+              Navigator.pop(context);
+            },
+            child: const Text('Set Alert'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    final remainingUnits = _waterUsage?.remainingUnits ?? 0;
+    final waterUsed = _waterUsage?.waterUsed ?? 0;
+    final totalPurchased = _waterUsage?.totalUnitsPurchased ?? 0;
+    final remainingPercent =
+        totalPurchased > 0 ? remainingUnits / totalPurchased : 0;
+    final daysLeft = _calculateDaysLeft();
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(

@@ -1,6 +1,6 @@
 // lib/repositories/payment_repository.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:smartpay/screens/payment_model.dart';
+import 'package:smartpay/model/payment_model.dart';
 
 class PaymentRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;

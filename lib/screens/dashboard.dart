@@ -41,7 +41,7 @@ class Dashboard extends StatelessWidget {
                       Icons.water_drop_outlined,
                       Colors.blueAccent,
                           () {
-                        _navigateWithSlideTransition(context, const WaterUsageScreen());
+                        _navigateWithSlideTransition(context, const WaterUsageScreen(meterNumber: '12345',));
                       },
                     ),
                     const SizedBox(height: 16),
