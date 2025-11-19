@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class MpesaService {
   // ✅ Node server URL configuration
   static const String _baseUrl =
-      'http://10.10.226.251:5000'; //change every time you have to run for you own good
+      'http://192.168.48.3:5000'; //change every time you have to run for you own good
   //static const String _baseUrl = 'https://unlaudable-samual-overconstantly.ngrok-free.dev';
 
   // Alternative URLs for different environments
