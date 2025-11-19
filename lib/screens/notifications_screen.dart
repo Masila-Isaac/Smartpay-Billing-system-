@@ -47,7 +47,7 @@ class NotificationsScreen extends StatelessWidget {
             _buildNotificationItem(
               icon: Icons.payment,
               title: 'Payment Successful',
-              description: 'Your water bill payment of \$45.50 has been processed',
+              description: 'Your water bill payment of ksh450.50 has been processed',
               time: '2 hours ago',
               type: 'success',
               isUnread: true,

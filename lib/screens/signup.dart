@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:smartpay/screens/login.dart';
 import 'package:smartpay/services/firease_Auth.dart';
-import 'package:smartpay/services/auth_service.dart';
+
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
 
@@ -29,7 +29,21 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   Future<void> _signUp() async {
-    // ... existing validation code
+    if (nameController.text.isEmpty ||
+        emailController.text.isEmpty ||
+        passwordController.text.isEmpty) {
+      _showErrorDialog('Please fill in all fields');
+      return;
+    }
+
+    if (passwordController.text.length < 6) {
+      _showErrorDialog('Password must be at least 6 characters long');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
 
     try {
       final authService = FirebaseAuthService();
@@ -41,17 +55,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
       );
 
       if (user != null) {
-        // Save login state
-        await AuthService.setLoggedIn(true, email: emailController.text.trim());
-
-        // Store email and password for auto-fill in login
-        _storeCredentialsForLogin();
-
-        // Show success message
-        _showSuccessDialog();
+        // Navigate to login screen after successful sign-up
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
       }
     } catch (e) {
-      _showErrorDialog('Sign up failed. Please try again.');
+      // Error is handled by FirebaseAuthService
     } finally {
       if (mounted) {
         setState(() {
@@ -59,96 +70,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
         });
       }
     }
-  }
-  void _storeCredentialsForLogin() {
-    // Store credentials locally for auto-fill
-    // You can use shared_preferences package for persistent storage
-    // For now, we'll pass them via constructor to login screen
-  }
-
-  void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.check_circle_outline,
-                    color: Colors.green,
-                    size: 40,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Account Created!',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Your account has been created successfully. You can now log in.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      // Navigate to login with pre-filled email
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => LoginScreen(
-                            preFilledEmail: emailController.text.trim(),
-                            preFilledPassword: passwordController.text.trim(),
-                          ),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueAccent,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: const Text(
-                      'Continue to Login',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
   }
 
   void _showErrorDialog(String message) {

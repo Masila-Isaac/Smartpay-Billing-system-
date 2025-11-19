@@ -24,16 +24,9 @@ class WaterReadingScreen extends StatelessWidget {
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-            // Current Units Display
             _buildCurrentUnitsCard(),
             const SizedBox(height: 32),
-
-            // Meter Information
             _buildMeterInfoSection(),
-            const SizedBox(height: 32),
-
-            // Quick Actions
-            _buildQuickActions(),
           ],
         ),
       ),
@@ -60,7 +53,6 @@ class WaterReadingScreen extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Water Drop Icon
           Container(
             width: 80,
             height: 80,
@@ -75,8 +67,6 @@ class WaterReadingScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-
-          // Current Units
           const Text(
             'Current Units',
             style: TextStyle(
@@ -86,8 +76,6 @@ class WaterReadingScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-
-          // Units Value
           const Text(
             '14.23',
             style: TextStyle(
@@ -96,8 +84,6 @@ class WaterReadingScreen extends StatelessWidget {
               color: Colors.black87,
             ),
           ),
-
-          // Units Label
           const Text(
             'cubic meters',
             style: TextStyle(
@@ -107,8 +93,6 @@ class WaterReadingScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-
-          // Date Display
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
@@ -156,21 +140,18 @@ class WaterReadingScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-
           _buildInfoRow(
             icon: Icons.confirmation_number_outlined,
             title: 'Meter Number',
             value: 'MW-7845-2024',
           ),
           const SizedBox(height: 16),
-
           _buildInfoRow(
             icon: Icons.location_on_outlined,
             title: 'Location',
             value: 'Nairobi, Kenya',
           ),
           const SizedBox(height: 16),
-
           _buildInfoRow(
             icon: Icons.account_balance_outlined,
             title: 'Account Status',
@@ -222,110 +203,6 @@ class WaterReadingScreen extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildQuickActions() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Quick Actions',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Colors.black87,
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        Row(
-          children: [
-            Expanded(
-              child: _buildActionCard(
-                icon: Icons.history_outlined,
-                title: 'Usage History',
-                onTap: () {},
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildActionCard(
-                icon: Icons.receipt_long_outlined,
-                title: 'View Bill',
-                onTap: () {},
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        Row(
-          children: [
-            Expanded(
-              child: _buildActionCard(
-                icon: Icons.shopping_cart_outlined,
-                title: 'Buy Units',
-                onTap: () {},
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildActionCard(
-                icon: Icons.notifications_outlined,
-                title: 'Set Alert',
-                onTap: () {},
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildActionCard({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-  }) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blueAccent.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  color: Colors.blueAccent,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 

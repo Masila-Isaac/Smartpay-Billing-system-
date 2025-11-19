@@ -3,16 +3,9 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:smartpay/screens/dashboard.dart';
 import 'package:smartpay/screens/signup.dart';
 import 'package:smartpay/services/firease_Auth.dart';
-import 'package:smartpay/services/auth_service.dart';
-class LoginScreen extends StatefulWidget {
-  final String? preFilledEmail;
-  final String? preFilledPassword;
 
-  const LoginScreen({
-    super.key,
-    this.preFilledEmail,
-    this.preFilledPassword,
-  });
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -26,18 +19,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
-  @override
-  void initState() {
-    super.initState();
-    // Pre-fill credentials if provided
-    if (widget.preFilledEmail != null) {
-      emailController.text = widget.preFilledEmail!;
-    }
-    if (widget.preFilledPassword != null) {
-      passwordController.text = widget.preFilledPassword!;
-    }
-  }
-
   // Dispose controllers when screen is closed
   @override
   void dispose() {
@@ -46,9 +27,16 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-// In your _login method, update the success part:
+  // Login logic
   Future<void> _login() async {
-    // ... existing validation code
+    if (emailController.text.isEmpty || passwordController.text.isEmpty) {
+      _showErrorDialog('Please fill in all fields');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
 
     try {
       final authService = FirebaseAuthService();
@@ -60,9 +48,6 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (user != null) {
-        // Save login state
-        await AuthService.setLoggedIn(true, email: emailController.text.trim());
-
         // Navigate to dashboard if login successful
         Navigator.pushReplacement(
           context,
@@ -70,7 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
-      _showErrorDialog('Login failed. Please check your credentials and try again.');
+      // Error is handled by FirebaseAuthService
     } finally {
       if (mounted) {
         setState(() {
@@ -79,6 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     }
   }
+
   void _showErrorDialog(String message) {
     showDialog(
       context: context,
@@ -91,31 +77,10 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               Icon(Icons.error_outline, color: Colors.red),
               SizedBox(width: 8),
-              Text('Login Error'),
+              Text('Error'),
             ],
           ),
           content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showForgotPasswordDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text('Forgot Password?'),
-          content: const Text('Please contact support to reset your password.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -193,22 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(height: 20),
             _buildPasswordField(),
 
-            // Forgot Password
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: _isLoading ? null : _showForgotPasswordDialog,
-                child: Text(
-                  'Forgot Password?',
-                  style: TextStyle(
-                    color: _isLoading ? Colors.grey : Colors.blueAccent,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
 
             // Login button
             SizedBox(
