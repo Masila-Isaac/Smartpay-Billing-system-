@@ -10,8 +10,6 @@ import 'screens/signup.dart';
 import 'screens/dashboard.dart';
 import 'screens/viewreport.dart';
 import 'screens/payment_options_screen.dart';
-import 'screens/water_usage_screen.dart';
-import 'screens/water_reading_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

@@ -36,7 +36,7 @@ class SettingsScreen extends StatelessWidget {
               trailing: Switch(
                 value: true,
                 onChanged: (value) {},
-                activeColor: Colors.blueAccent,
+                activeThumbColor: Colors.blueAccent,
               ),
             ),
             _buildSettingsCard(
@@ -158,11 +158,12 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                trailing ?? Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  size: 16,
-                  color: Colors.grey[400],
-                ),
+                trailing ??
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 16,
+                      color: Colors.grey[400],
+                    ),
               ],
             ),
           ),

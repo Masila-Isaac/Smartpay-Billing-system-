@@ -8,8 +8,7 @@ import '../model/payment_model.dart';
 class WaterReadingScreen extends StatefulWidget {
   final String meterNumber;
 
-  const WaterReadingScreen({Key? key, required this.meterNumber})
-      : super(key: key);
+  const WaterReadingScreen({super.key, required this.meterNumber});
 
   @override
   _WaterReadingScreenState createState() => _WaterReadingScreenState();

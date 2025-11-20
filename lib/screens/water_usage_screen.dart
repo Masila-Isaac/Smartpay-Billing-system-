@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../services/mpesa_service.dart';
 import '../model/payment_model.dart';
 import '../model/water_usage_model.dart';
@@ -442,7 +440,8 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
                 children: [
                   Column(
                     children: [
-                      Icon(Icons.warning_amber, color: Color(0xFFFF3B30), size: 20),
+                      Icon(Icons.warning_amber,
+                          color: Color(0xFFFF3B30), size: 20),
                       SizedBox(height: 6),
                       Text(
                         "Low",
@@ -456,7 +455,8 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
                   ),
                   Column(
                     children: [
-                      Icon(Icons.trending_up, color: Color(0xFFFF9500), size: 20),
+                      Icon(Icons.trending_up,
+                          color: Color(0xFFFF9500), size: 20),
                       SizedBox(height: 6),
                       Text(
                         "Moderate",
@@ -470,7 +470,8 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
                   ),
                   Column(
                     children: [
-                      Icon(Icons.check_circle, color: Color(0xFF34C759), size: 20),
+                      Icon(Icons.check_circle,
+                          color: Color(0xFF34C759), size: 20),
                       SizedBox(height: 6),
                       Text(
                         "Full",
