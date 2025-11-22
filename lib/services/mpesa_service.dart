@@ -6,7 +6,8 @@ import '../model/water_usage_model.dart';
 
 class MpesaService {
   // ✅ Node server URL configuration
-  static const String _baseUrl = 'http://192.168.48.176:5000';
+  static const String _baseUrl =
+      'http://10.10.226.251:5000'; // change as per the ip of your computer
 
   /// Get the appropriate base URL based on environment
   static String get baseUrl {

@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 class WaterReadingScreen extends StatelessWidget {
@@ -5,6 +7,8 @@ class WaterReadingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String uid = FirebaseAuth.instance.currentUser!.uid;
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -20,20 +24,55 @@ class WaterReadingScreen extends StatelessWidget {
         elevation: 0,
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            _buildCurrentUnitsCard(),
-            const SizedBox(height: 32),
-            _buildMeterInfoSection(),
-          ],
-        ),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('clients')
+            .doc(uid)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (!snapshot.hasData || snapshot.data!.data() == null) {
+            return const Center(
+              child: Text(
+                'No water meter data found',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+            );
+          }
+
+          final data = snapshot.data!.data() as Map<String, dynamic>;
+
+          // Use remainingUnits if available, fallback to currentUnits
+          double units =
+              (data['remainingUnits'] ?? data['currentUnits'] ?? 0).toDouble();
+          String meterNumber = data['meterNumber'] ?? 'Not assigned';
+          String location = data['location'] ?? 'Not specified';
+          String status = data['status'] ?? 'Unknown';
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                _buildCurrentUnitsCard(units),
+                const SizedBox(height: 32),
+                _buildMeterInfoSection(
+                  meterNumber: meterNumber,
+                  location: location,
+                ),
+                const SizedBox(height: 20),
+                _buildStatusRow(status),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildCurrentUnitsCard() {
+  Widget _buildCurrentUnitsCard(double units) {
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
@@ -46,10 +85,7 @@ class WaterReadingScreen extends StatelessWidget {
             offset: const Offset(0, 8),
           ),
         ],
-        border: Border.all(
-          color: Colors.grey.shade100,
-          width: 1,
-        ),
+        border: Border.all(color: Colors.grey.shade100),
       ),
       child: Column(
         children: [
@@ -60,25 +96,17 @@ class WaterReadingScreen extends StatelessWidget {
               color: Colors.blueAccent.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.water_drop,
-              color: Colors.blueAccent,
-              size: 40,
-            ),
+            child: const Icon(Icons.water_drop, size: 40, color: Colors.blue),
           ),
           const SizedBox(height: 24),
           const Text(
-            'Current Units',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey,
-              fontWeight: FontWeight.w500,
-            ),
+            'Remaining Units',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
           ),
           const SizedBox(height: 8),
-          const Text(
-            '14.23',
-            style: TextStyle(
+          Text(
+            units.toStringAsFixed(2),
+            style: const TextStyle(
               fontSize: 48,
               fontWeight: FontWeight.w700,
               color: Colors.black87,
@@ -86,11 +114,7 @@ class WaterReadingScreen extends StatelessWidget {
           ),
           const Text(
             'cubic meters',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey,
-              fontWeight: FontWeight.w500,
-            ),
+            style: TextStyle(fontSize: 16, color: Colors.grey),
           ),
           const SizedBox(height: 16),
           Container(
@@ -104,7 +128,6 @@ class WaterReadingScreen extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 14,
                 color: Colors.grey,
-                fontWeight: FontWeight.w500,
               ),
             ),
           ),
@@ -113,7 +136,10 @@ class WaterReadingScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildMeterInfoSection() {
+  Widget _buildMeterInfoSection({
+    required String meterNumber,
+    required String location,
+  }) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -136,29 +162,45 @@ class WaterReadingScreen extends StatelessWidget {
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: Colors.black87,
             ),
           ),
           const SizedBox(height: 20),
           _buildInfoRow(
             icon: Icons.confirmation_number_outlined,
             title: 'Meter Number',
-            value: 'MW-7845-2024',
+            value: meterNumber,
           ),
           const SizedBox(height: 16),
           _buildInfoRow(
             icon: Icons.location_on_outlined,
             title: 'Location',
-            value: 'Nairobi, Kenya',
-          ),
-          const SizedBox(height: 16),
-          _buildInfoRow(
-            icon: Icons.account_balance_outlined,
-            title: 'Account Status',
-            value: 'Active',
-            valueColor: Colors.green,
+            value: location,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildStatusRow(String status) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: _buildInfoRow(
+        icon: Icons.verified_user_outlined,
+        title: "Account Status",
+        value: status,
+        valueColor: _getStatusColor(status),
       ),
     );
   }
@@ -177,21 +219,13 @@ class WaterReadingScreen extends StatelessWidget {
             color: Colors.blueAccent.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(
-            icon,
-            color: Colors.blueAccent,
-            size: 20,
-          ),
+          child: Icon(icon, color: Colors.blueAccent),
         ),
         const SizedBox(width: 16),
         Expanded(
           child: Text(
             title,
-            style: const TextStyle(
-              fontSize: 16,
-              color: Colors.grey,
-              fontWeight: FontWeight.w500,
-            ),
+            style: const TextStyle(color: Colors.grey, fontSize: 16),
           ),
         ),
         Text(
@@ -208,15 +242,37 @@ class WaterReadingScreen extends StatelessWidget {
 
   String _getCurrentDate() {
     final now = DateTime.now();
-    final formattedDate = '${now.day} ${_getMonthName(now.month)} ${now.year}';
-    return formattedDate;
+    return "${now.day} ${_getMonthName(now.month)} ${now.year}";
   }
 
   String _getMonthName(int month) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return months[month - 1];
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'active':
+        return Colors.green;
+      case 'inactive':
+        return Colors.red;
+      case 'suspended':
+        return Colors.orange;
+      default:
+        return Colors.grey;
+    }
   }
 }
