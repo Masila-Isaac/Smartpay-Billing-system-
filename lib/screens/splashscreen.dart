@@ -20,6 +20,7 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
+    // Animation controller
     _controller = AnimationController(
       duration: const Duration(milliseconds: 1000),
       vsync: this,
@@ -35,18 +36,24 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
+    // Handle app initialization
     _initializeApp();
   }
 
   Future<void> _initializeApp() async {
+    // Check login status
     final isLoggedIn = await AuthService.isLoggedIn();
+
+    // Show logo for 3 seconds for animation
     await Future.delayed(const Duration(seconds: 3));
 
     if (mounted && !_navigationCompleted) {
       _navigationCompleted = true;
 
       Navigator.pushReplacementNamed(
-          context, isLoggedIn ? '/dashboard' : '/getstarted');
+        context,
+        isLoggedIn ? '/dashboard' : '/getstarted',
+      );
     }
   }
 
