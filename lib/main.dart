@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
-import 'services/auth_service.dart';
 import 'screens/splashscreen.dart';
 import 'screens/get_started_screen.dart';
 import 'screens/login.dart';
@@ -25,12 +24,6 @@ void main() async {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // Decide which screen to load FIRST
-  Future<Widget> _decideStartupScreen() async {
-    final isLogged = await AuthService.isLoggedIn();
-    return isLogged ? const Dashboard() : const SplashScreen();
-  }
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -40,23 +33,11 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueAccent),
         useMaterial3: true,
       ),
-      home: FutureBuilder<Widget>(
-        future: _decideStartupScreen(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return Scaffold(
-              backgroundColor: Colors.white,
-              body: Center(
-                child: Image.asset(
-                  'assets/images/logo.png',
-                  height: 80,
-                ),
-              ),
-            );
-          }
-          return snapshot.data!;
-        },
-      ),
+
+      // ALWAYS start from splash screen
+      home: const SplashScreen(),
+
+      // Routes
       routes: {
         '/getstarted': (context) => const GetStartedScreen(),
         '/login': (context) => const LoginScreen(),
@@ -64,8 +45,6 @@ class MyApp extends StatelessWidget {
         '/dashboard': (context) => const Dashboard(),
         '/viewreport': (context) => const ViewReport(),
         '/paymentoptions': (context) => const PaymentOptionsScreen(),
-        // Remove this line - WaterUsageScreen requires a parameter
-        // '/waterusage': (context) => const WaterUsageScreen(),
       },
     );
   }

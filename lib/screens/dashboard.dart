@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:smartpay/screens/paybill_screen.dart';
 import 'package:smartpay/screens/viewreport.dart';
 import 'package:smartpay/screens/water_usage_screen.dart';
-import 'package:smartpay/screens/water_reading_screen.dart'; // Add this import
+import 'package:smartpay/screens/water_reading_screen.dart';
 import 'package:smartpay/screens/profile_screen.dart';
-
 import 'package:smartpay/screens/settings_screen.dart';
-
 import 'package:smartpay/screens/notifications_screen.dart';
 import 'package:smartpay/screens/help_support_screen.dart';
 import 'package:smartpay/services/auth_service.dart';
@@ -30,8 +28,8 @@ class Dashboard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Welcome section
-                    _buildWelcomeSection(),
+                    // Professional Banner with image background
+                    _buildProfessionalBanner(),
                     const SizedBox(height: 32),
 
                     // Main Actions
@@ -84,6 +82,269 @@ class Dashboard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  // Professional Banner Section with Image Background
+  Widget _buildProfessionalBanner() {
+    return Container(
+      width: double.infinity,
+      height: 240, // Increased height to prevent overflow
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.15),
+            blurRadius: 25,
+            offset: const Offset(0, 10),
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          // Background image with proper overlay
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: ColorFiltered(
+              colorFilter: ColorFilter.mode(
+                Colors.black.withOpacity(0.4),
+                BlendMode.darken,
+              ),
+              child: Image.asset(
+                'assets/images/banner.png',
+                width: double.infinity,
+                height: double.infinity,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+
+          // Dark overlay for better text readability
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withOpacity(0.3),
+                  Colors.black.withOpacity(0.7),
+                ],
+              ),
+            ),
+          ),
+
+          // Content - Using ListView to prevent overflow
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween, // Better space distribution
+              children: [
+                // Header Row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "CURRENT BALANCE",
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.9),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            "15.5 Units",
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 24, // Slightly smaller to fit better
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            "Available for usage",
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.8),
+                              fontSize: 11, // Smaller font
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.blue.shade400,
+                            Colors.blue.shade600,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.blue.withOpacity(0.4),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.water_drop_outlined,
+                        color: Colors.white,
+                        size: 24, // Smaller icon
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Usage Statistics - More compact
+                Container(
+                  padding: const EdgeInsets.all(12), // Reduced padding
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.2),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _buildBannerStat(
+                        "Volume Used",
+                        "2,450 L",
+                        Icons.water_damage_outlined,
+                      ),
+                      Container(
+                        height: 30, // Smaller divider
+                        width: 1,
+                        color: Colors.white.withOpacity(0.3),
+                      ),
+                      _buildBannerStat(
+                        "Remaining",
+                        "7,550 L",
+                        Icons.inventory_2_outlined,
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Progress Bar Section
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          "MONTHLY USAGE",
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.9),
+                            fontSize: 10, // Smaller font
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        Text(
+                          "24.5% Used",
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.9),
+                            fontSize: 11, // Smaller font
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      height: 5, // Thinner progress bar
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 25,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xFF00D4FF),
+                                    Color(0xFF0099FF),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            flex: 75,
+                            child: Container(
+                              color: Colors.transparent,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Banner Stat Widget - More compact
+  Widget _buildBannerStat(String title, String value, IconData icon) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(4), // Reduced padding
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Icon(
+            icon,
+            color: Colors.white,
+            size: 16, // Smaller icon
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14, // Smaller font
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          title,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.8),
+            fontSize: 10, // Smaller font
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 
@@ -202,8 +463,6 @@ class Dashboard extends StatelessWidget {
                   ],
                 ),
               ),
-
-
               const PopupMenuItem<String>(
                 value: 'notifications',
                 child: Row(
@@ -234,8 +493,6 @@ class Dashboard extends StatelessWidget {
                   ],
                 ),
               ),
-
-
               const PopupMenuItem<String>(
                 value: 'logout',
                 child: Row(
@@ -253,33 +510,6 @@ class Dashboard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-
-  // Welcome section
-  Widget _buildWelcomeSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          "Water Billing Dashboard",
-          style: TextStyle(
-            fontSize: 28,
-            fontWeight: FontWeight.w700,
-            color: Colors.black87,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          "Manage your water consumption and payments efficiently",
-          style: TextStyle(
-            fontSize: 16,
-            color: Colors.grey[600],
-            fontWeight: FontWeight.w400,
-          ),
-        ),
-      ],
     );
   }
 
@@ -356,9 +586,6 @@ class Dashboard extends StatelessWidget {
       case 'profile':
         _navigateWithSlideTransition(context, const ProfileScreen());
         break;
-
-
-
       case 'notifications':
         _navigateWithSlideTransition(context, const NotificationsScreen());
         break;
