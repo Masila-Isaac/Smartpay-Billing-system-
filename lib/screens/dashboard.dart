@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:smartpay/screens/paybill_screen.dart';
 import 'package:smartpay/screens/viewreport.dart';
+import 'package:smartpay/screens/water_Reading.dart';
 import 'package:smartpay/screens/water_usage_screen.dart';
-import 'package:smartpay/screens/water_reading_screen.dart';
 import 'package:smartpay/screens/profile_screen.dart';
 import 'package:smartpay/screens/settings_screen.dart';
 import 'package:smartpay/screens/notifications_screen.dart';
@@ -10,7 +10,18 @@ import 'package:smartpay/screens/help_support_screen.dart';
 import 'package:smartpay/services/auth_service.dart';
 
 class Dashboard extends StatelessWidget {
-  const Dashboard({super.key});
+  final String userId;
+  final String meterNumber;
+  final String userName;
+  final String userEmail;
+
+  const Dashboard({
+    super.key,
+    required this.userId,
+    required this.meterNumber,
+    required this.userName,
+    required this.userEmail,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -38,8 +49,11 @@ class Dashboard extends StatelessWidget {
                       "Units available for usage",
                       Icons.water_drop_outlined,
                       Colors.blueAccent,
-                          () {
-                        _navigateWithSlideTransition(context, const WaterUsageScreen(meterNumber: '12345',));
+                      () {
+                        _navigateWithSlideTransition(
+                          context,
+                          WaterUsageScreen(meterNumber: meterNumber),
+                        );
                       },
                     ),
                     const SizedBox(height: 16),
@@ -49,8 +63,11 @@ class Dashboard extends StatelessWidget {
                       "Make Payments",
                       Icons.payment_outlined,
                       Colors.green,
-                          () {
-                        _navigateWithSlideTransition(context, const PayBillScreen());
+                      () {
+                        _navigateWithSlideTransition(
+                          context,
+                          PayBillScreen(meterNumber: meterNumber),
+                        );
                       },
                     ),
                     const SizedBox(height: 16),
@@ -60,8 +77,11 @@ class Dashboard extends StatelessWidget {
                       "Water Reading",
                       Icons.speed_outlined,
                       Colors.orange,
-                          () {
-                        _navigateWithSlideTransition(context, const WaterReadingScreen());
+                      () {
+                        _navigateWithSlideTransition(
+                          context,
+                          WaterReadingScreentrail(meterNumber: meterNumber),
+                        );
                       },
                     ),
                     const SizedBox(height: 16),
@@ -71,8 +91,13 @@ class Dashboard extends StatelessWidget {
                       "View Statements",
                       Icons.receipt_long_outlined,
                       Colors.purple,
-                          () {
-                        _navigateWithSlideTransition(context, const ViewReport());
+                      () {
+                        _navigateWithSlideTransition(
+                          context,
+                          ViewReport(
+                              meterNumber:
+                                  meterNumber), // ✅ Fixed: Added meterNumber parameter
+                        );
                       },
                     ),
                   ],
@@ -89,7 +114,7 @@ class Dashboard extends StatelessWidget {
   Widget _buildProfessionalBanner() {
     return Container(
       width: double.infinity,
-      height: 240, // Increased height to prevent overflow
+      height: 240,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
@@ -116,6 +141,21 @@ class Dashboard extends StatelessWidget {
                 width: double.infinity,
                 height: double.infinity,
                 fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.blue.shade400,
+                          Colors.blue.shade700,
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -135,12 +175,12 @@ class Dashboard extends StatelessWidget {
             ),
           ),
 
-          // Content - Using ListView to prevent overflow
+          // Content
           Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween, // Better space distribution
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 // Header Row
                 Row(
@@ -152,7 +192,7 @@ class Dashboard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            "CURRENT BALANCE",
+                            "WELCOME BACK",
                             style: TextStyle(
                               color: Colors.white.withOpacity(0.9),
                               fontSize: 12,
@@ -162,20 +202,20 @@ class Dashboard extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            "15.5 Units",
+                            userName.split(' ')[0],
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 24, // Slightly smaller to fit better
+                              fontSize: 24,
                               fontWeight: FontWeight.w700,
                               letterSpacing: -0.5,
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            "Available for usage",
+                            "Meter: $meterNumber",
                             style: TextStyle(
                               color: Colors.white.withOpacity(0.8),
-                              fontSize: 11, // Smaller font
+                              fontSize: 11,
                               fontWeight: FontWeight.w400,
                             ),
                           ),
@@ -203,15 +243,15 @@ class Dashboard extends StatelessWidget {
                       child: const Icon(
                         Icons.water_drop_outlined,
                         color: Colors.white,
-                        size: 24, // Smaller icon
+                        size: 24,
                       ),
                     ),
                   ],
                 ),
 
-                // Usage Statistics - More compact
+                // Usage Statistics
                 Container(
-                  padding: const EdgeInsets.all(12), // Reduced padding
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
@@ -228,7 +268,7 @@ class Dashboard extends StatelessWidget {
                         Icons.water_damage_outlined,
                       ),
                       Container(
-                        height: 30, // Smaller divider
+                        height: 30,
                         width: 1,
                         color: Colors.white.withOpacity(0.3),
                       ),
@@ -252,7 +292,7 @@ class Dashboard extends StatelessWidget {
                           "MONTHLY USAGE",
                           style: TextStyle(
                             color: Colors.white.withOpacity(0.9),
-                            fontSize: 10, // Smaller font
+                            fontSize: 10,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 0.5,
                           ),
@@ -261,7 +301,7 @@ class Dashboard extends StatelessWidget {
                           "24.5% Used",
                           style: TextStyle(
                             color: Colors.white.withOpacity(0.9),
-                            fontSize: 11, // Smaller font
+                            fontSize: 11,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -269,7 +309,7 @@ class Dashboard extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Container(
-                      height: 5, // Thinner progress bar
+                      height: 5,
                       width: double.infinity,
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.2),
@@ -310,12 +350,12 @@ class Dashboard extends StatelessWidget {
     );
   }
 
-  // Banner Stat Widget - More compact
+  // Banner Stat Widget
   Widget _buildBannerStat(String title, String value, IconData icon) {
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.all(4), // Reduced padding
+          padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.1),
             borderRadius: BorderRadius.circular(6),
@@ -323,7 +363,7 @@ class Dashboard extends StatelessWidget {
           child: Icon(
             icon,
             color: Colors.white,
-            size: 16, // Smaller icon
+            size: 16,
           ),
         ),
         const SizedBox(height: 6),
@@ -331,7 +371,7 @@ class Dashboard extends StatelessWidget {
           value,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 14, // Smaller font
+            fontSize: 14,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -340,7 +380,7 @@ class Dashboard extends StatelessWidget {
           title,
           style: TextStyle(
             color: Colors.white.withOpacity(0.8),
-            fontSize: 10, // Smaller font
+            fontSize: 10,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -360,7 +400,8 @@ class Dashboard extends StatelessWidget {
           const end = Offset.zero;
           const curve = Curves.easeInOutQuart;
 
-          var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+          var tween =
+              Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
           var offsetAnimation = animation.drive(tween);
 
           return SlideTransition(
@@ -369,23 +410,6 @@ class Dashboard extends StatelessWidget {
               opacity: animation,
               child: child,
             ),
-          );
-        },
-      ),
-    );
-  }
-
-  // Smooth fade transition for menu items
-  void _navigateWithFadeTransition(BuildContext context, Widget page) {
-    Navigator.push(
-      context,
-      PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 300),
-        pageBuilder: (context, animation, secondaryAnimation) => page,
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(
-            opacity: animation,
-            child: child,
           );
         },
       ),
@@ -421,6 +445,10 @@ class Dashboard extends StatelessWidget {
                 child: Image.asset(
                   'assets/images/logo.png',
                   height: 32,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Icon(Icons.water_drop,
+                        color: Colors.blueAccent);
+                  },
                 ),
               ),
               const SizedBox(width: 12),
@@ -467,7 +495,8 @@ class Dashboard extends StatelessWidget {
                 value: 'notifications',
                 child: Row(
                   children: [
-                    Icon(Icons.notifications_outlined, size: 20, color: Colors.black54),
+                    Icon(Icons.notifications_outlined,
+                        size: 20, color: Colors.black54),
                     SizedBox(width: 12),
                     Text('Notifications'),
                   ],
@@ -487,7 +516,8 @@ class Dashboard extends StatelessWidget {
                 value: 'settings',
                 child: Row(
                   children: [
-                    Icon(Icons.settings_outlined, size: 20, color: Colors.black54),
+                    Icon(Icons.settings_outlined,
+                        size: 20, color: Colors.black54),
                     SizedBox(width: 12),
                     Text('Settings'),
                   ],
@@ -515,12 +545,12 @@ class Dashboard extends StatelessWidget {
 
   // Professional Menu Button
   Widget _buildMenuButton(
-      BuildContext context,
-      String title,
-      IconData icon,
-      Color color,
-      VoidCallback onPressed,
-      ) {
+    BuildContext context,
+    String title,
+    IconData icon,
+    Color color,
+    VoidCallback onPressed,
+  ) {
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(
@@ -584,7 +614,15 @@ class Dashboard extends StatelessWidget {
   void _handleMenuSelection(BuildContext context, String value) {
     switch (value) {
       case 'profile':
-        _navigateWithSlideTransition(context, const ProfileScreen());
+        _navigateWithSlideTransition(
+          context,
+          ProfileScreen(
+            userId: userId,
+            userName: userName,
+            userEmail: userEmail,
+            meterNumber: meterNumber,
+          ),
+        );
         break;
       case 'notifications':
         _navigateWithSlideTransition(context, const NotificationsScreen());
@@ -599,19 +637,6 @@ class Dashboard extends StatelessWidget {
         _showLogoutDialog(context);
         break;
     }
-  }
-
-  void _showComingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Feature coming soon!'),
-        duration: Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(10)),
-        ),
-      ),
-    );
   }
 
   // Logout confirmation dialog
@@ -669,7 +694,6 @@ class Dashboard extends StatelessWidget {
                       child: ElevatedButton(
                         onPressed: () async {
                           Navigator.of(context).pop();
-                          // Add logout logic here
                           await AuthService.logout();
                           Navigator.pushReplacementNamed(context, '/login');
                         },

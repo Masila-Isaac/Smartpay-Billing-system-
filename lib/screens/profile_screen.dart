@@ -3,7 +3,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final String userId;
+  final String userName;
+  final String userEmail;
+  final String meterNumber;
+
+  const ProfileScreen({
+    super.key,
+    required this.userId,
+    required this.userName,
+    required this.userEmail,
+    required this.meterNumber,
+  });
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -27,23 +38,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    _currentUser = _auth.currentUser!;
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    try {
+      // Initialize controllers with widget data first
+      _nameController.text = widget.userName;
+
+      // Then try to load additional data from Firestore
+      await _loadUserData();
+    } catch (e) {
+      print('Error initializing data: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _loadUserData() async {
     try {
-      _currentUser = _auth.currentUser!;
-
       // Get user document from Firestore
-      DocumentSnapshot userDoc = await _firestore
-          .collection('users')
-          .doc(_currentUser.uid)
-          .get();
+      DocumentSnapshot userDoc =
+          await _firestore.collection('users').doc(widget.userId).get();
 
       if (userDoc.exists) {
         setState(() {
           _userData = userDoc.data() as Map<String, dynamic>;
-          _nameController.text = _userData['name'] ?? '';
+          // Only update controllers if they're empty or if we have new data
+          if (_nameController.text.isEmpty) {
+            _nameController.text = _userData['name'] ?? widget.userName;
+          }
           _phoneController.text = _userData['phone'] ?? '';
           _addressController.text = _userData['address'] ?? '';
           _locationController.text = _userData['location'] ?? '';
@@ -63,9 +89,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _createUserDocument() async {
     try {
-      await _firestore.collection('users').doc(_currentUser.uid).set({
-        'name': _currentUser.displayName ?? '',
-        'email': _currentUser.email ?? '',
+      await _firestore.collection('users').doc(widget.userId).set({
+        'name': widget.userName,
+        'email': widget.userEmail,
+        'meterNumber': widget.meterNumber,
         'phone': '',
         'address': '',
         'location': '',
@@ -74,9 +101,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
 
       // Reload data after creating document
-      _loadUserData();
+      await _loadUserData();
     } catch (e) {
       print('Error creating user document: $e');
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -86,13 +116,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _isLoading = true;
       });
 
-      await _firestore.collection('users').doc(_currentUser.uid).update({
+      await _firestore.collection('users').doc(widget.userId).update({
         'name': _nameController.text.trim(),
         'phone': _phoneController.text.trim(),
         'address': _addressController.text.trim(),
         'location': _locationController.text.trim(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // Update account_details collection as well
+      await _firestore.collection('account_details').doc(widget.userId).set({
+        'name': _nameController.text.trim(),
+        'phone': _phoneController.text.trim(),
+        'address': _addressController.text.trim(),
+        'location': _locationController.text.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
       // Reload data to get updated information
       await _loadUserData();
@@ -101,32 +140,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _isEditing = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Profile updated successfully!'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Profile updated successfully!'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-        ),
-      );
+        );
+      }
     } catch (e) {
       print('Error updating user data: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error updating profile: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Error updating profile. Please try again.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-        ),
-      );
+        );
+      }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -137,8 +183,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _cancelEdit() {
-    // Reset controllers to original values
-    _nameController.text = _userData['name'] ?? '';
+    // Reset controllers to original values from Firestore or widget data
+    _nameController.text = _userData['name'] ?? widget.userName;
     _phoneController.text = _userData['phone'] ?? '';
     _addressController.text = _userData['address'] ?? '';
     _locationController.text = _userData['location'] ?? '';
@@ -174,7 +220,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         elevation: 0,
         centerTitle: true,
         actions: [
-          if (!_isEditing)
+          if (!_isEditing && !_isLoading)
             IconButton(
               icon: Container(
                 padding: const EdgeInsets.all(6),
@@ -183,9 +229,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
-                    Icons.edit_outlined,
-                    size: 20,
-                    color: Colors.blueAccent
+                  Icons.edit_outlined,
+                  size: 20,
+                  color: Colors.blueAccent,
                 ),
               ),
               onPressed: _toggleEditMode,
@@ -194,32 +240,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       body: _isLoading
           ? const Center(
-        child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(Colors.blueAccent),
-        ),
-      )
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+              ),
+            )
           : SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            // Profile Header
-            _buildProfileHeader(),
-            const SizedBox(height: 32),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  // Profile Header
+                  _buildProfileHeader(),
+                  const SizedBox(height: 32),
 
-            // Personal Details Section
-            _buildSectionTitle('Personal Details'),
-            const SizedBox(height: 16),
+                  // Account Information Section
+                  _buildAccountInfoSection(),
+                  const SizedBox(height: 24),
 
-            // Editable Form Fields
-            _buildEditableForm(),
+                  // Personal Details Section
+                  _buildSectionTitle('Personal Details'),
+                  const SizedBox(height: 16),
 
-            const SizedBox(height: 24),
+                  // Editable Form Fields
+                  _buildEditableForm(),
 
-            // Action Buttons when editing
-            if (_isEditing) _buildActionButtons(),
-          ],
-        ),
-      ),
+                  const SizedBox(height: 24),
+
+                  // Action Buttons when editing
+                  if (_isEditing) _buildActionButtons(),
+                ],
+              ),
+            ),
     );
   }
 
@@ -284,9 +334,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         const SizedBox(height: 20),
         Text(
-          _userData['name']?.isNotEmpty == true
-              ? _userData['name']
-              : 'No Name Set',
+          _nameController.text.isNotEmpty
+              ? _nameController.text
+              : widget.userName,
           style: const TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.w700,
@@ -295,7 +345,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          _userData['email'] ?? 'No email',
+          widget.userEmail,
           style: TextStyle(
             fontSize: 16,
             color: Colors.grey[600],
@@ -329,6 +379,65 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccountInfoSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.blueAccent.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.blueAccent.withOpacity(0.2)),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Account Information',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildInfoRow('Meter Number', widget.meterNumber),
+          const SizedBox(height: 12),
+          _buildInfoRow('User ID', widget.userId),
+          const SizedBox(height: 12),
+          _buildInfoRow('Email', widget.userEmail),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 120,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[700],
+              fontSize: 14,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.black87,
+            ),
           ),
         ),
       ],
@@ -425,7 +534,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Row(
-        crossAxisAlignment: maxLines > 1 ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+        crossAxisAlignment:
+            maxLines > 1 ? CrossAxisAlignment.start : CrossAxisAlignment.center,
         children: [
           Container(
             padding: const EdgeInsets.all(12),
@@ -451,28 +561,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 6),
                 isEditable
                     ? TextField(
-                  controller: controller,
-                  keyboardType: keyboardType,
-                  maxLines: maxLines,
-                  decoration: InputDecoration(
-                    hintText: hintText,
-                    hintStyle: TextStyle(color: Colors.grey[500]),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.black87,
-                  ),
-                )
+                        controller: controller,
+                        keyboardType: keyboardType,
+                        maxLines: maxLines,
+                        decoration: InputDecoration(
+                          hintText: hintText,
+                          hintStyle: TextStyle(color: Colors.grey[500]),
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.black87,
+                        ),
+                      )
                     : Text(
-                  controller.text.isNotEmpty ? controller.text : 'Not set',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: controller.text.isNotEmpty ? Colors.grey[700] : Colors.grey[400],
-                    fontStyle: controller.text.isEmpty ? FontStyle.italic : FontStyle.normal,
-                  ),
-                ),
+                        controller.text.isNotEmpty
+                            ? controller.text
+                            : 'Not set',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: controller.text.isNotEmpty
+                              ? Colors.grey[700]
+                              : Colors.grey[400],
+                          fontStyle: controller.text.isEmpty
+                              ? FontStyle.italic
+                              : FontStyle.normal,
+                        ),
+                      ),
               ],
             ),
           ),
@@ -529,20 +645,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             child: _isLoading
                 ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-              ),
-            )
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
                 : const Text(
-              'Save Changes',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 16,
-              ),
-            ),
+                    'Save Changes',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                  ),
           ),
         ),
       ],

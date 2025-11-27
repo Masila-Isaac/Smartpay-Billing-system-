@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smartpay/screens/login.dart';
-import 'package:smartpay/services/firease_Auth.dart';
+import 'package:smartpay/services/firebase_Auth.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -14,12 +15,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool obscurePassword = true;
   bool _isLoading = false;
 
-  // Controllers
   final TextEditingController nameController = TextEditingController();
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
-  // Dispose controllers
+  final FirebaseAuthService authService = FirebaseAuthService();
+
   @override
   void dispose() {
     nameController.dispose();
@@ -41,13 +42,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
-      final authService = FirebaseAuthService();
-
       final user = await authService.signUpWithEmail(
         email: emailController.text.trim(),
         password: passwordController.text.trim(),
@@ -55,19 +52,41 @@ class _SignUpScreenState extends State<SignUpScreen> {
       );
 
       if (user != null) {
-        // Navigate to login screen after successful sign-up
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-        );
+        // Generate meter number
+        String meterNumber = "MTR${DateTime.now().millisecondsSinceEpoch}";
+
+        // Create user document in Firestore
+        await FirebaseFirestore.instance.collection("users").doc(user.uid).set({
+          "email": emailController.text.trim(),
+          "name": nameController.text.trim(),
+          "meterNumber": meterNumber,
+          "createdAt": FieldValue.serverTimestamp(),
+          "updatedAt": FieldValue.serverTimestamp(),
+        });
+
+        // Create initial water usage document
+        await FirebaseFirestore.instance
+            .collection("waterUsage")
+            .doc(meterNumber)
+            .set({
+          "meterNumber": meterNumber,
+          "status": "active",
+          "remainingUnits": 0.0,
+          "waterUsed": 0.0,
+          "totalUnitsPurchased": 0.0,
+          "userId": user.uid,
+          "createdAt": FieldValue.serverTimestamp(),
+          "updatedAt": FieldValue.serverTimestamp(),
+        });
+
+        // Show success message
+        _showSuccessDialog(meterNumber);
       }
     } catch (e) {
-      // Error is handled by FirebaseAuthService
+      _showErrorDialog('Sign up failed: $e');
     } finally {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
     }
   }
@@ -99,6 +118,78 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
+  void _showSuccessDialog(String meterNumber) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.green),
+              SizedBox(width: 8),
+              Text('Success'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Account created successfully!'),
+              const SizedBox(height: 8),
+              Text(
+                'Your Meter Number:',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[700],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  meterNumber,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.blue,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Please save this meter number for future reference.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                );
+              },
+              child: const Text('Continue to Login'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -108,7 +199,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Logo Row
             Row(
               children: [
                 Container(
@@ -134,15 +224,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
               ],
             ),
             const SizedBox(height: 48),
-
-            // Header
             const Text(
               "Create an Account",
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.w700,
                 color: Colors.black87,
-                letterSpacing: -0.5,
               ),
             ),
             const SizedBox(height: 8),
@@ -151,12 +238,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.black54,
-                fontWeight: FontWeight.w400,
               ),
             ),
             const SizedBox(height: 40),
-
-            // Input Fields
             _buildTextField(
               controller: nameController,
               hint: "Full Name",
@@ -170,10 +254,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
             ),
             const SizedBox(height: 20),
             _buildPasswordField(),
-
             const SizedBox(height: 32),
-
-            // Sign Up Button
             SizedBox(
               width: double.infinity,
               height: 56,
@@ -182,60 +263,46 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blueAccent,
                   foregroundColor: Colors.white,
-                  elevation: 2,
-                  shadowColor: Colors.blueAccent.withOpacity(0.3),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
                 child: _isLoading
-                    ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                )
+                    ? const CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      )
                     : const Text(
-                  "Sign Up",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                  ),
-                ),
+                        "Sign Up",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
               ),
             ),
             const SizedBox(height: 32),
-
             _buildDividerWithOr(),
             const SizedBox(height: 32),
             _buildSocialIcons(),
-
             const SizedBox(height: 40),
-
-            // Already have account? Sign In
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Text(
                   "Already have an account? ",
-                  style: TextStyle(
-                    color: Colors.black54,
-                    fontSize: 15,
-                  ),
+                  style: TextStyle(color: Colors.black54, fontSize: 15),
                 ),
                 GestureDetector(
                   onTap: _isLoading
                       ? null
                       : () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                    );
-                  },
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const LoginScreen()),
+                          );
+                        },
                   child: Text(
                     "Sign In",
                     style: TextStyle(
@@ -253,7 +320,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  // Custom TextField
   Widget _buildTextField({
     required TextEditingController controller,
     required String hint,
@@ -262,178 +328,82 @@ class _SignUpScreenState extends State<SignUpScreen> {
     return TextField(
       controller: controller,
       enabled: !_isLoading,
-      style: const TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w400,
-      ),
       decoration: InputDecoration(
-        prefixIcon: Icon(
-          icon,
-          color: _isLoading ? Colors.grey : Colors.black54,
-          size: 22,
-        ),
+        prefixIcon: Icon(icon, color: Colors.black54),
         hintText: hint,
-        hintStyle: TextStyle(
-          color: _isLoading ? Colors.grey : Colors.black38,
-          fontWeight: FontWeight.w400,
-        ),
         filled: true,
-        fillColor: _isLoading ? Colors.grey[100] : Colors.grey[50],
+        fillColor: Colors.grey[50],
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(
-            color: Colors.blueAccent,
-            width: 1.5,
-          ),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 20,
-          vertical: 18,
         ),
       ),
     );
   }
 
-  // Password field
   Widget _buildPasswordField() {
     return TextField(
       controller: passwordController,
       obscureText: obscurePassword,
       enabled: !_isLoading,
-      style: const TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w400,
-      ),
       decoration: InputDecoration(
-        prefixIcon: Icon(
-          Icons.lock_outline,
-          color: _isLoading ? Colors.grey : Colors.black54,
-          size: 22,
-        ),
+        prefixIcon: const Icon(Icons.lock_outline, color: Colors.black54),
         hintText: "Password",
-        hintStyle: TextStyle(
-          color: _isLoading ? Colors.grey : Colors.black38,
-          fontWeight: FontWeight.w400,
-        ),
         filled: true,
-        fillColor: _isLoading ? Colors.grey[100] : Colors.grey[50],
+        fillColor: Colors.grey[50],
         suffixIcon: IconButton(
           icon: Icon(
             obscurePassword
                 ? Icons.visibility_off_outlined
                 : Icons.visibility_outlined,
-            color: _isLoading ? Colors.grey : Colors.black54,
-            size: 22,
           ),
-          onPressed: _isLoading
-              ? null
-              : () {
-            setState(() {
-              obscurePassword = !obscurePassword;
-            });
+          onPressed: () {
+            setState(() => obscurePassword = !obscurePassword);
           },
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(
-            color: Colors.blueAccent,
-            width: 1.5,
-          ),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 20,
-          vertical: 18,
-        ),
       ),
     );
   }
 
-  // Divider
   Widget _buildDividerWithOr() {
     return Row(
       children: [
-        Expanded(
-          child: Divider(
-            thickness: 1,
-            color: Colors.grey[300],
-          ),
-        ),
+        Expanded(child: Divider(color: Colors.grey[300])),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            "or",
-            style: TextStyle(
-              color: Colors.grey[500],
-              fontWeight: FontWeight.w500,
-              fontSize: 14,
-            ),
-          ),
+          child: Text("or", style: TextStyle(color: Colors.grey[500])),
         ),
-        Expanded(
-          child: Divider(
-            thickness: 1,
-            color: Colors.grey[300],
-          ),
-        ),
+        Expanded(child: Divider(color: Colors.grey[300])),
       ],
     );
   }
 
-  // Social Icons
   Widget _buildSocialIcons() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: FaIcon(
-            FontAwesomeIcons.apple,
-            size: 22,
-            color: Colors.black87,
-          ),
-        ),
+        _socialIcon(FontAwesomeIcons.apple),
         const SizedBox(width: 20),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: FaIcon(
-            FontAwesomeIcons.google,
-            size: 22,
-            color: Colors.black87,
-          ),
-        ),
+        _socialIcon(FontAwesomeIcons.google),
         const SizedBox(width: 20),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: FaIcon(
-            FontAwesomeIcons.facebook,
-            size: 22,
-            color: Colors.black87,
-          ),
-        ),
+        _socialIcon(FontAwesomeIcons.facebook),
       ],
+    );
+  }
+
+  Widget _socialIcon(IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: FaIcon(icon, size: 22, color: Colors.black87),
     );
   }
 }

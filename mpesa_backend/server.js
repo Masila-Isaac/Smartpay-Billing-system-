@@ -1,3 +1,5 @@
+// index.js
+require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
 const bodyParser = require("body-parser");
@@ -17,19 +19,28 @@ const app = express();
 app.use(cors({ origin: "*" }));
 app.use(bodyParser.json());
 
-// Logging
+// Logging middleware
 app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
     console.log("Body:", req.body);
     next();
 });
 
-// M-Pesa Sandbox Config
-const consumerKey = "K7IC57RapWZk1DRfRudx9vrtjorrwch4rthRG0rEK6GoC6aJ";
-const consumerSecret = "4mlSkx39UItTGy3wqppv5CITHMgu5eUycqbGkni60n7POzd3xVu5oQ1st6ImuHfh";
-const shortcode = "174379";
-const passkey = "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919";
-const callbackUrl = "https://your-ngrok-url.ngrok-free.app/mpesa/callback";
+/**
+ * Environment variables expected (create a .env file - see .env.example)
+ * MPESA_CONSUMER_KEY
+ * MPESA_CONSUMER_SECRET
+ * MPESA_SHORTCODE
+ * MPESA_PASSKEY
+ * CALLBACK_URL  -> PUBLIC URL that Safaricom can call (ngrok/real domain)
+ */
+
+// Config (from env)
+const consumerKey = process.env.MPESA_CONSUMER_KEY;
+const consumerSecret = process.env.MPESA_CONSUMER_SECRET;
+const shortcode = process.env.MPESA_SHORTCODE;
+const passkey = process.env.MPESA_PASSKEY;
+const callbackUrl = process.env.CALLBACK_URL; // must be public
 
 // Water Billing Config
 const WATER_RATES = { ratePerUnit: 50, unitSize: 1000, currency: "KES" };
@@ -49,7 +60,7 @@ async function processPaymentToWaterUnits({ amount, meterNumber, phone, transact
     const unitsPurchased = (amount / WATER_RATES.ratePerUnit) * WATER_RATES.unitSize;
     console.log(`💧 Payment conversion: ${amount} KES = ${unitsPurchased} liters`);
 
-    // Update payment
+    // Update payment doc(s)
     const paymentQuery = await db.collection("payments").where("transactionId", "==", transactionId).get();
     if (!paymentQuery.empty) {
         paymentQuery.forEach(async doc => {
@@ -145,9 +156,11 @@ async function triggerLowBalanceAlert(meterNumber, remainingUnits) {
 // STK Push endpoint
 app.post("/mpesa/stkpush", async (req, res) => {
     try {
+        // NOTE: expect meterNumber in the body (not accountRef)
         const { phoneNumber, amount, meterNumber, userId } = req.body;
-        if (!phoneNumber || !amount || !meterNumber)
+        if (!phoneNumber || !amount || !meterNumber) {
             return res.status(400).json({ success: false, error: "Missing fields" });
+        }
 
         const token = await getAccessToken();
         const timestamp = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 14);
@@ -195,10 +208,16 @@ app.post("/mpesa/stkpush", async (req, res) => {
     }
 });
 
-// Callback endpoint
+// Callback endpoint (Safaricom will POST here)
 app.post("/mpesa/callback", async (req, res) => {
     try {
-        const callbackData = req.body.Body.stkCallback;
+        // Safaricom sandbox wraps the stkCallback inside Body
+        const callbackData = req.body.Body?.stkCallback;
+        if (!callbackData) {
+            console.warn("Callback missing stkCallback payload:", req.body);
+            return res.status(400).json({ ResultCode: 1, ResultDesc: "Missing callback data" });
+        }
+
         const transactionId = callbackData.CheckoutRequestID;
         const status = callbackData.ResultCode === 0 ? "Success" : "Failed";
 
@@ -218,8 +237,11 @@ app.post("/mpesa/callback", async (req, res) => {
                     });
                 }
             });
+        } else {
+            console.warn("No payment record found for transactionId:", transactionId);
         }
 
+        // Reply to Safaricom immediately
         res.json({ ResultCode: 0, ResultDesc: "Success" });
     } catch (error) {
         console.error("Callback Error:", error);
@@ -231,7 +253,7 @@ app.post("/mpesa/callback", async (req, res) => {
 app.post("/api/water-usage", async (req, res) => {
     try {
         const { meterNumber, waterUsed } = req.body;
-        if (!meterNumber || !waterUsed) return res.status(400).json({ success: false, error: "Missing fields" });
+        if (!meterNumber || waterUsed === undefined) return res.status(400).json({ success: false, error: "Missing fields" });
 
         const result = await updateWaterConsumption(meterNumber, parseFloat(waterUsed));
         res.json({ success: true, ...result });
