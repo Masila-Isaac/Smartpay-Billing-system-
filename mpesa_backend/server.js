@@ -153,13 +153,42 @@ async function triggerLowBalanceAlert(meterNumber, remainingUnits) {
     });
 }
 
+// ========== ROUTES ==========
+
+// Root endpoint - FIXED: Added this missing endpoint
+app.get("/", (req, res) => {
+    res.json({
+        success: true,
+        message: "Water Billing API Server is running",
+        timestamp: new Date().toISOString(),
+        endpoints: {
+            test: "/test",
+            stkPush: "/mpesa/stkpush",
+            callback: "/mpesa/callback",
+            waterStatus: "/api/water-status/:meterNumber",
+            paymentHistory: "/api/payment-history/:meterNumber",
+            waterUsage: "/api/water-usage"
+        }
+    });
+});
+
+// Test endpoint
+app.get("/test", (req, res) => {
+    res.json({
+        success: true,
+        message: "Water Billing Server running",
+        waterRates: WATER_RATES,
+        serverTime: new Date().toISOString()
+    });
+});
+
 // STK Push endpoint
 app.post("/mpesa/stkpush", async (req, res) => {
     try {
         // NOTE: expect meterNumber in the body (not accountRef)
         const { phoneNumber, amount, meterNumber, userId } = req.body;
         if (!phoneNumber || !amount || !meterNumber) {
-            return res.status(400).json({ success: false, error: "Missing fields" });
+            return res.status(400).json({ success: false, error: "Missing fields: phoneNumber, amount, meterNumber are required" });
         }
 
         const token = await getAccessToken();
@@ -180,15 +209,19 @@ app.post("/mpesa/stkpush", async (req, res) => {
             TransactionDesc: "Water Bill Payment",
         };
 
+        console.log('📱 STK Push Payload:', payload);
+
         const response = await axios.post(
             "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
             payload,
             { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, timeout: 15000 }
         );
 
+        console.log('📡 M-Pesa Response:', response.data);
+
         if (response.data.ResponseCode === "0") {
             await db.collection("payments").add({
-                userId,
+                userId: userId || "unknown",
                 phone: phoneNumber,
                 amount,
                 meterNumber,
@@ -204,13 +237,15 @@ app.post("/mpesa/stkpush", async (req, res) => {
         }
     } catch (error) {
         console.error("STK Push Error:", error.response?.data || error.message);
-        return res.status(500).json({ success: false, error: "STK Push failed" });
+        return res.status(500).json({ success: false, error: "STK Push failed: " + (error.response?.data?.errorMessage || error.message) });
     }
 });
 
 // Callback endpoint (Safaricom will POST here)
 app.post("/mpesa/callback", async (req, res) => {
     try {
+        console.log('📞 Callback received:', JSON.stringify(req.body, null, 2));
+
         // Safaricom sandbox wraps the stkCallback inside Body
         const callbackData = req.body.Body?.stkCallback;
         if (!callbackData) {
@@ -220,6 +255,8 @@ app.post("/mpesa/callback", async (req, res) => {
 
         const transactionId = callbackData.CheckoutRequestID;
         const status = callbackData.ResultCode === 0 ? "Success" : "Failed";
+
+        console.log(`🔄 Processing callback for transaction: ${transactionId}, Status: ${status}`);
 
         const querySnapshot = await db.collection("payments").where("transactionId", "==", transactionId).get();
         if (!querySnapshot.empty) {
@@ -291,11 +328,21 @@ app.get("/api/payment-history/:meterNumber", async (req, res) => {
     }
 });
 
-// Test
-app.get("/test", (req, res) => {
-    res.json({ success: true, message: "Water Billing Server running", waterRates: WATER_RATES });
+// Health check endpoint
+app.get("/health", (req, res) => {
+    res.json({
+        status: "OK",
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        memory: process.memoryUsage()
+    });
 });
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, "0.0.0.0", () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📍 Local: http://localhost:${PORT}`);
+    console.log(`📍 Network: http://192.168.100.24:${PORT}`);
+    console.log(`✅ Test endpoint: http://192.168.100.24:${PORT}/test`);
+});

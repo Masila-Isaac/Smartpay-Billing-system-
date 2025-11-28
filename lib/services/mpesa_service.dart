@@ -10,23 +10,41 @@ class MpesaService {
 
   static String get baseUrl => _baseUrl;
 
-  /// Test Backend Connection
+  /// Test Backend Connection - FIXED: Now uses correct endpoints
   static Future<bool> testConnection() async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/'),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 10));
+      print('🔗 Testing connection to: $baseUrl');
 
-      print('🔗 Server test status: ${response.statusCode}');
-      return response.statusCode == 200;
+      // Try multiple endpoints
+      final endpoints = ['/test', '/', '/health'];
+
+      for (String endpoint in endpoints) {
+        try {
+          final response = await http.get(
+            Uri.parse('$baseUrl$endpoint'),
+            headers: {'Content-Type': 'application/json'},
+          ).timeout(const Duration(seconds: 10));
+
+          print('🔗 $endpoint status: ${response.statusCode}');
+          print('🔗 $endpoint response: ${response.body}');
+
+          if (response.statusCode == 200) {
+            print('✅ Server connection successful via $endpoint');
+            return true;
+          }
+        } catch (e) {
+          print('❌ $endpoint failed: $e');
+        }
+      }
+
+      return false;
     } catch (e) {
-      print('❌ Server connection failed: $e');
+      print('❌ All connection attempts failed: $e');
       return false;
     }
   }
 
-  /// Initiates M-Pesa STK Push Payment
+  /// Initiates M-Pesa STK Push Payment - IMPROVED: Better error handling
   static Future<Map<String, dynamic>> initiatePayment({
     required String userId,
     required String phone,
@@ -35,8 +53,14 @@ class MpesaService {
   }) async {
     try {
       print('🔄 Initiating payment to: $baseUrl/mpesa/stkpush');
-      print(
-          '📱 User: $userId, Phone: $phone, Amount: $amount, Meter: $meterNumber');
+      print('📱 Payment Details:');
+      print('   User ID: $userId');
+      print('   Phone: $phone');
+      print('   Amount: $amount KES');
+      print('   Meter: $meterNumber');
+
+      // Format phone number (ensure it starts with 254)
+      String formattedPhone = formatPhoneNumber(phone);
 
       final response = await http
           .post(
@@ -47,20 +71,21 @@ class MpesaService {
             },
             body: json.encode({
               'userId': userId,
-              'phoneNumber': phone,
+              'phoneNumber': formattedPhone,
               'amount': amount,
               'meterNumber': meterNumber,
             }),
           )
           .timeout(const Duration(seconds: 30));
 
-      print('📡 Status Code: ${response.statusCode}');
-      print('📡 Response Body: ${response.body}');
+      print('📡 HTTP Status Code: ${response.statusCode}');
+      print('📡 Raw Response: ${response.body}');
 
       Map<String, dynamic> data;
       try {
         data = json.decode(response.body) as Map<String, dynamic>;
-      } catch (_) {
+      } catch (e) {
+        print('❌ JSON Decode Error: $e');
         throw Exception("Invalid server response format");
       }
 
@@ -69,7 +94,7 @@ class MpesaService {
           // Save payment to Firestore
           await savePaymentToFirestore(
             userId: userId,
-            phone: phone,
+            phone: formattedPhone,
             amount: amount,
             meterNumber: meterNumber,
             status: 'Pending',
@@ -86,15 +111,19 @@ class MpesaService {
             'status': 'pending'
           };
         } else {
-          throw Exception(
-              data['error'] ?? data['message'] ?? 'Payment request failed');
+          String errorMessage =
+              data['error'] ?? data['message'] ?? 'Payment request failed';
+          print('❌ Payment failed: $errorMessage');
+          throw Exception(errorMessage);
         }
       } else {
-        throw Exception(
-            'Server error: ${response.statusCode} - ${data['error'] ?? 'Unknown error'}');
+        String errorMessage =
+            'Server error: ${response.statusCode} - ${data['error'] ?? 'Unknown error'}';
+        print('❌ HTTP Error: $errorMessage');
+        throw Exception(errorMessage);
       }
     } catch (e) {
-      print('❌ Payment Error: $e');
+      print('❌ Payment Initiation Error: $e');
 
       // Save failed payment to Firestore for record keeping
       try {
@@ -106,6 +135,7 @@ class MpesaService {
           status: 'Failed',
           transactionId: '',
           reference: 'FAILED_${DateTime.now().millisecondsSinceEpoch}',
+          error: e.toString(),
         );
       } catch (firestoreError) {
         print('❌ Failed to save failed payment: $firestoreError');
@@ -115,7 +145,24 @@ class MpesaService {
     }
   }
 
-  /// Saves Payment to Firestore using Payment Model
+  /// Format phone number to MPesa format (254...)
+  static String formatPhoneNumber(String phone) {
+    // Remove any spaces or special characters
+    String cleaned = phone.replaceAll(RegExp(r'[^\d]'), '');
+
+    // Convert to 254 format
+    if (cleaned.startsWith('0')) {
+      return '254${cleaned.substring(1)}';
+    } else if (cleaned.startsWith('+254')) {
+      return cleaned.substring(1);
+    } else if (cleaned.startsWith('254')) {
+      return cleaned;
+    } else {
+      return '254$cleaned';
+    }
+  }
+
+  /// Saves Payment to Firestore using Payment Model - IMPROVED: Added error field
   static Future<void> savePaymentToFirestore({
     required String userId,
     required String phone,
@@ -124,6 +171,7 @@ class MpesaService {
     required String status,
     required String transactionId,
     required String reference,
+    String? error,
   }) async {
     try {
       final payment = Payment(
@@ -138,6 +186,7 @@ class MpesaService {
         unitsPurchased: calculateUnits(amount),
         processed: false,
         reference: reference,
+        error: error,
       );
 
       final docRef = await FirebaseFirestore.instance
@@ -161,6 +210,8 @@ class MpesaService {
   static Future<Map<String, dynamic>> checkPaymentStatus(
       String checkoutRequestId) async {
     try {
+      print('🔄 Checking payment status for: $checkoutRequestId');
+
       final response = await http
           .post(
             Uri.parse('$baseUrl/mpesa/query'),
@@ -174,13 +225,41 @@ class MpesaService {
           )
           .timeout(const Duration(seconds: 15));
 
+      print(
+          '📡 Status check response: ${response.statusCode} - ${response.body}');
+
       if (response.statusCode == 200) {
         return json.decode(response.body) as Map<String, dynamic>;
       } else {
-        throw Exception('Failed to check payment status');
+        throw Exception(
+            'Failed to check payment status: ${response.statusCode}');
       }
     } catch (e) {
       print('❌ Payment Status Check Error: $e');
+      rethrow;
+    }
+  }
+
+  /// Get Water Status by Meter Number
+  static Future<Map<String, dynamic>> getWaterStatus(String meterNumber) async {
+    try {
+      print('🔄 Getting water status for: $meterNumber');
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/water-status/$meterNumber'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      } else {
+        throw Exception('Failed to get water status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Water Status Fetch Error: $e');
       rethrow;
     }
   }
@@ -269,6 +348,25 @@ class MpesaService {
       }
     } catch (e) {
       print('❌ Update Payment Status Error: $e');
+      rethrow;
+    }
+  }
+
+  /// Get server info
+  static Future<Map<String, dynamic>> getServerInfo() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      } else {
+        throw Exception('Failed to get server info');
+      }
+    } catch (e) {
+      print('❌ Server Info Error: $e');
       rethrow;
     }
   }

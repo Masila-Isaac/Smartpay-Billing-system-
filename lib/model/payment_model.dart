@@ -14,6 +14,9 @@ class Payment {
   final bool processed;
   final double? conversionRate;
   final String? reference;
+  final String? error; // ADDED: error field
+  final DateTime? updatedAt;
+  final String? mpesaReceiptNumber;
 
   Payment({
     required this.id,
@@ -28,6 +31,9 @@ class Payment {
     this.processed = false,
     this.conversionRate,
     this.reference,
+    this.error, // ADDED: error field
+    this.updatedAt,
+    this.mpesaReceiptNumber,
   });
 
   factory Payment.fromFirestore(DocumentSnapshot doc) {
@@ -38,14 +44,19 @@ class Payment {
       userId: data['userId'] ?? '',
       phone: data['phone'] ?? '',
       amount: (data['amount'] ?? 0).toDouble(),
-      meterNumber: data['meterNumber'] ?? '', // FIXED: was 'meteterNumber'
+      meterNumber: data['meterNumber'] ?? '',
       status: data['status'] ?? 'Pending',
       transactionId: data['transactionId'] ?? '',
       timestamp: (data['timestamp'] as Timestamp).toDate(),
       unitsPurchased: (data['unitsPurchased'] ?? 0).toDouble(),
       processed: data['processed'] ?? false,
       conversionRate: data['conversionRate']?.toDouble(),
-      reference: data['reference'], // ADDED: reference field
+      reference: data['reference'],
+      error: data['error'], // ADDED: error field
+      updatedAt: data['updatedAt'] != null
+          ? (data['updatedAt'] as Timestamp).toDate()
+          : null,
+      mpesaReceiptNumber: data['mpesaReceiptNumber'],
     );
   }
 
@@ -54,14 +65,17 @@ class Payment {
       'userId': userId,
       'phone': phone,
       'amount': amount,
-      'meterNumber': meterNumber, // FIXED: was 'meteterNumber'
+      'meterNumber': meterNumber,
       'status': status,
       'transactionId': transactionId,
       'timestamp': Timestamp.fromDate(timestamp),
       'unitsPurchased': unitsPurchased,
       'processed': processed,
       if (conversionRate != null) 'conversionRate': conversionRate,
-      if (reference != null) 'reference': reference, // ADDED: reference field
+      if (reference != null) 'reference': reference,
+      if (error != null) 'error': error, // ADDED: error field
+      if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
+      if (mpesaReceiptNumber != null) 'mpesaReceiptNumber': mpesaReceiptNumber,
     };
   }
 
@@ -88,6 +102,9 @@ class Payment {
     bool? processed,
     double? conversionRate,
     String? reference,
+    String? error, // ADDED: error field
+    DateTime? updatedAt,
+    String? mpesaReceiptNumber,
   }) {
     return Payment(
       id: id ?? this.id,
@@ -102,6 +119,30 @@ class Payment {
       processed: processed ?? this.processed,
       conversionRate: conversionRate ?? this.conversionRate,
       reference: reference ?? this.reference,
+      error: error ?? this.error, // ADDED: error field
+      updatedAt: updatedAt ?? this.updatedAt,
+      mpesaReceiptNumber: mpesaReceiptNumber ?? this.mpesaReceiptNumber,
     );
+  }
+
+  @override
+  String toString() {
+    return 'Payment('
+        'id: $id, '
+        'userId: $userId, '
+        'phone: $phone, '
+        'amount: $amount, '
+        'meterNumber: $meterNumber, '
+        'status: $status, '
+        'transactionId: $transactionId, '
+        'timestamp: $timestamp, '
+        'unitsPurchased: $unitsPurchased, '
+        'processed: $processed, '
+        'conversionRate: $conversionRate, '
+        'reference: $reference, '
+        'error: $error, ' // ADDED: error in toString
+        'updatedAt: $updatedAt, '
+        'mpesaReceiptNumber: $mpesaReceiptNumber'
+        ')';
   }
 }
