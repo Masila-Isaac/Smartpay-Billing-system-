@@ -14,7 +14,7 @@ class Payment {
   final bool processed;
   final double? conversionRate;
   final String? reference;
-  final String? error; // ADDED: error field
+  final String? error;
   final DateTime? updatedAt;
   final String? mpesaReceiptNumber;
 
@@ -31,7 +31,7 @@ class Payment {
     this.processed = false,
     this.conversionRate,
     this.reference,
-    this.error, // ADDED: error field
+    this.error,
     this.updatedAt,
     this.mpesaReceiptNumber,
   });
@@ -47,17 +47,22 @@ class Payment {
       meterNumber: data['meterNumber'] ?? '',
       status: data['status'] ?? 'Pending',
       transactionId: data['transactionId'] ?? '',
-      timestamp: (data['timestamp'] as Timestamp).toDate(),
+      timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
       unitsPurchased: (data['unitsPurchased'] ?? 0).toDouble(),
       processed: data['processed'] ?? false,
       conversionRate: data['conversionRate']?.toDouble(),
       reference: data['reference'],
-      error: data['error'], // ADDED: error field
+      error: data['error'],
       updatedAt: data['updatedAt'] != null
           ? (data['updatedAt'] as Timestamp).toDate()
           : null,
       mpesaReceiptNumber: data['mpesaReceiptNumber'],
     );
+  }
+
+  // ADDED: Factory method for QueryDocumentSnapshot
+  factory Payment.fromQueryDoc(QueryDocumentSnapshot doc) {
+    return Payment.fromFirestore(doc);
   }
 
   Map<String, dynamic> toMap() {
@@ -73,20 +78,40 @@ class Payment {
       'processed': processed,
       if (conversionRate != null) 'conversionRate': conversionRate,
       if (reference != null) 'reference': reference,
-      if (error != null) 'error': error, // ADDED: error field
+      if (error != null) 'error': error,
       if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
       if (mpesaReceiptNumber != null) 'mpesaReceiptNumber': mpesaReceiptNumber,
     };
   }
 
-  // Helper methods
+  // IMPROVED: Helper methods with better status checking
   bool get isSuccessful =>
-      status.toLowerCase() == 'success' || status.toLowerCase() == 'completed';
-  bool get isPending => status.toLowerCase() == 'pending';
-  bool get isFailed => status.toLowerCase() == 'failed';
+      status.toLowerCase() == 'success' ||
+      status.toLowerCase() == 'completed' ||
+      status.toLowerCase() == 'successful';
+
+  bool get isPending =>
+      status.toLowerCase() == 'pending' || status.toLowerCase() == 'processing';
+
+  bool get isFailed =>
+      status.toLowerCase() == 'failed' ||
+      status.toLowerCase() == 'cancelled' ||
+      status.toLowerCase() == 'rejected';
+
   bool get isProcessed => processed;
+
   String get formattedAmount => 'KES ${amount.toStringAsFixed(2)}';
   String get formattedUnits => '${unitsPurchased.toStringAsFixed(2)} L';
+
+  // ADDED: Formatted date for display
+  String get formattedDate {
+    return '${timestamp.day}/${timestamp.month}/${timestamp.year}';
+  }
+
+  // ADDED: Formatted time for display
+  String get formattedTime {
+    return '${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+  }
 
   // Copy with method for updates
   Payment copyWith({
@@ -102,7 +127,7 @@ class Payment {
     bool? processed,
     double? conversionRate,
     String? reference,
-    String? error, // ADDED: error field
+    String? error,
     DateTime? updatedAt,
     String? mpesaReceiptNumber,
   }) {
@@ -119,7 +144,7 @@ class Payment {
       processed: processed ?? this.processed,
       conversionRate: conversionRate ?? this.conversionRate,
       reference: reference ?? this.reference,
-      error: error ?? this.error, // ADDED: error field
+      error: error ?? this.error,
       updatedAt: updatedAt ?? this.updatedAt,
       mpesaReceiptNumber: mpesaReceiptNumber ?? this.mpesaReceiptNumber,
     );
@@ -140,7 +165,7 @@ class Payment {
         'processed: $processed, '
         'conversionRate: $conversionRate, '
         'reference: $reference, '
-        'error: $error, ' // ADDED: error in toString
+        'error: $error, '
         'updatedAt: $updatedAt, '
         'mpesaReceiptNumber: $mpesaReceiptNumber'
         ')';

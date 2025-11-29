@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import '../services/mpesa_service.dart';
-import '../model/payment_model.dart';
-import '../model/water_usage_model.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:smartpay/model/payment_model.dart';
+import 'package:smartpay/model/water_usage_model.dart';
 
 class WaterUsageScreen extends StatefulWidget {
   final String meterNumber;
@@ -19,6 +20,9 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
   WaterUsage? _waterUsage;
   List<Payment> _paymentHistory = [];
   bool _isLoading = true;
+  double _remainingBalance = 0.0;
+  double _totalPurchased = 0.0;
+  double _waterUsed = 0.0;
 
   @override
   void initState() {
@@ -30,41 +34,111 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
     _animation = Tween<double>(begin: 0, end: 0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
     );
-    _loadWaterData();
+    _loadUserData();
   }
 
-  Future<void> _loadWaterData() async {
+  Future<void> _loadUserData() async {
     try {
-      // Load water usage from Firestore
-      final waterUsage = await MpesaService.getWaterUsage(widget.meterNumber);
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
 
-      // Load payment history
-      final payments = await MpesaService.getPaymentHistory(widget.meterNumber);
+      // Load payment history for this user/meter
+      await _loadPaymentHistory(user.uid);
+
+      // Load water usage data
+      await _loadWaterUsage();
 
       setState(() {
-        _waterUsage = waterUsage;
-        _paymentHistory = payments;
         _isLoading = false;
 
         // Update animation with real data
-        if (waterUsage != null && waterUsage.totalUnitsPurchased > 0) {
+        if (_totalPurchased > 0) {
           final remainingPercent =
-              waterUsage.remainingUnits / waterUsage.totalUnitsPurchased;
-          _animation =
-              Tween<double>(begin: 0, end: remainingPercent.clamp(0.0, 1.0))
-                  .animate(
-            CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-          );
+              (_remainingBalance / _totalPurchased).clamp(0.0, 1.0);
+          _animation = Tween<double>(begin: 0, end: remainingPercent).animate(
+              CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
         }
       });
 
       _controller.forward();
     } catch (e) {
-      print('Error loading water data: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      print('Error loading user data: $e');
+      setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _loadPaymentHistory(String userId) async {
+    try {
+      final paymentsQuery = await FirebaseFirestore.instance
+          .collection('payments')
+          .where('userId', isEqualTo: userId)
+          .where('meterNumber', isEqualTo: widget.meterNumber)
+          .where('processed', isEqualTo: true)
+          .orderBy('timestamp', descending: true)
+          .get();
+
+      _paymentHistory = paymentsQuery.docs
+          .map((doc) => Payment.fromQueryDoc(doc))
+          .where((payment) => payment.isSuccessful)
+          .toList();
+
+      // Calculate total purchased units from successful payments
+      _totalPurchased = _paymentHistory.fold(
+          0.0, (sum, payment) => sum + payment.unitsPurchased);
+
+      // Calculate remaining balance
+      _remainingBalance = _calculateRemainingBalance();
+    } catch (e) {
+      print('Error loading payment history: $e');
+    }
+  }
+
+  Future<void> _loadWaterUsage() async {
+    try {
+      final usageQuery = await FirebaseFirestore.instance
+          .collection('waterUsage')
+          .where('meterNumber', isEqualTo: widget.meterNumber)
+          .orderBy('timestamp', descending: true)
+          .limit(1)
+          .get();
+
+      if (usageQuery.docs.isNotEmpty) {
+        _waterUsage = WaterUsage.fromFirestore(usageQuery.docs.first);
+        _waterUsed = _waterUsage?.waterUsed ?? 0.0;
+
+        // If waterUsage has remainingUnits, use that instead of calculation
+        if (_waterUsage?.remainingUnits != null &&
+            _waterUsage!.remainingUnits > 0) {
+          _remainingBalance = _waterUsage!.remainingUnits;
+        }
+      }
+    } catch (e) {
+      print('Error loading water usage: $e');
+    }
+  }
+
+  double _calculateRemainingBalance() {
+    // Priority 1: Use waterUsage remainingUnits if available
+    if (_waterUsage != null && _waterUsage!.remainingUnits > 0) {
+      return _waterUsage!.remainingUnits;
+    }
+
+    // Priority 2: Calculate from payments and usage
+    return (_totalPurchased - _waterUsed).clamp(0.0, double.infinity);
+  }
+
+  String _calculateDaysLeft() {
+    if (_remainingBalance <= 0) return '0';
+
+    final averageDailyUsage = _waterUsed > 0
+        ? _waterUsed / 30 // Assuming 30 days of data
+        : 2.7; // Default average
+
+    final daysLeft = _remainingBalance / averageDailyUsage;
+    return daysLeft.floor().toString();
   }
 
   @override
@@ -73,34 +147,13 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
     super.dispose();
   }
 
-  // Get color based on position
   Color _getCircleColor(double value) {
     if (value < 0.33) return const Color(0xFFFF3B30);
     if (value < 0.66) return const Color(0xFFFF9500);
     return const Color(0xFF34C759);
   }
 
-  String _calculateDaysLeft() {
-    if (_waterUsage == null || _waterUsage!.remainingUnits <= 0) return '0';
-
-    final averageDailyUsage = _waterUsage!.waterUsed > 0
-        ? _waterUsage!.waterUsed / 30 // Assuming 30 days of data
-        : 2.7; // Default average
-
-    final daysLeft = _waterUsage!.remainingUnits / averageDailyUsage;
-    return daysLeft.floor().toString();
-  }
-
   void _navigateToBuyUnits() {
-    // Navigate to payment screen
-    // Navigator.push(
-    //   context,
-    //   MaterialPageRoute(
-    //     builder: (context) => PaymentScreen(meterNumber: widget.meterNumber),
-    //   ),
-    // );
-
-    // For now, show a dialog
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -139,9 +192,15 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
                         color:
                             payment.isSuccessful ? Colors.green : Colors.orange,
                       ),
-                      title: Text('KES ${payment.amount.toStringAsFixed(2)}'),
-                      subtitle: Text(
-                          '${payment.unitsPurchased.toStringAsFixed(2)} L'),
+                      title: Text(payment.formattedAmount),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(payment.formattedUnits),
+                          Text(
+                              '${payment.formattedDate} ${payment.formattedTime}'),
+                        ],
+                      ),
                       trailing: Text(
                         payment.status,
                         style: TextStyle(
@@ -201,11 +260,9 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
       );
     }
 
-    final remainingUnits = _waterUsage?.remainingUnits ?? 0;
-    final waterUsed = _waterUsage?.waterUsed ?? 0;
-    final totalPurchased = _waterUsage?.totalUnitsPurchased ?? 0;
-    final remainingPercent =
-        totalPurchased > 0 ? remainingUnits / totalPurchased : 0;
+    final remainingPercent = _totalPurchased > 0
+        ? (_remainingBalance / _totalPurchased).clamp(0.0, 1.0)
+        : 0.0;
     final daysLeft = _calculateDaysLeft();
 
     return Scaffold(
@@ -226,7 +283,32 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline, size: 22),
-            onPressed: () {},
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Account Summary'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          'Total Purchased: ${_totalPurchased.toStringAsFixed(2)} L'),
+                      Text('Water Used: ${_waterUsed.toStringAsFixed(2)} L'),
+                      Text(
+                          'Remaining: ${_remainingBalance.toStringAsFixed(2)} L'),
+                      Text('Payments: ${_paymentHistory.length}'),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Close'),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -235,15 +317,10 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header Card with Summary
-            _buildSummaryCard(),
+            _buildSummaryCard(_remainingBalance, daysLeft),
             const SizedBox(height: 32),
-
-            // Usage Progress Section
-            _buildProgressSection(),
+            _buildProgressSection(remainingPercent),
             const SizedBox(height: 32),
-
-            // Action Buttons
             _buildActionButtons(),
           ],
         ),
@@ -251,7 +328,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
     );
   }
 
-  Widget _buildSummaryCard() {
+  Widget _buildSummaryCard(double remainingBalance, String daysLeft) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -287,9 +364,9 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  '12.58 m³',
-                  style: TextStyle(
+                Text(
+                  '${remainingBalance.toStringAsFixed(2)} m³',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 32,
                     fontWeight: FontWeight.w700,
@@ -297,7 +374,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Estimated 4 days left',
+                  'Estimated $daysLeft days left',
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.9),
                     fontSize: 14,
@@ -324,7 +401,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
     );
   }
 
-  Widget _buildProgressSection() {
+  Widget _buildProgressSection(double remainingPercent) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -350,7 +427,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.grey[100]!),
+            border: Border.all(color: Colors.grey[300]!),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.08),
@@ -516,7 +593,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
           icon: Icons.shopping_cart_outlined,
           title: 'Buy Units',
           subtitle: 'Purchase additional water units',
-          onTap: () {},
+          onTap: _navigateToBuyUnits,
           color: const Color(0xFF667eea),
         ),
         const SizedBox(height: 16),
@@ -524,7 +601,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
           icon: Icons.receipt_long_outlined,
           title: 'View Statement',
           subtitle: 'Check your billing history',
-          onTap: () {},
+          onTap: _viewStatement,
           color: const Color(0xFF34C759),
         ),
         const SizedBox(height: 16),
@@ -532,7 +609,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
           icon: Icons.notifications_outlined,
           title: 'Set Usage Alert',
           subtitle: 'Get notified when usage is high',
-          onTap: () {},
+          onTap: _setUsageAlert,
           color: const Color(0xFFFF9500),
         ),
       ],

@@ -10,7 +10,7 @@ class MpesaService {
 
   static String get baseUrl => _baseUrl;
 
-  /// Test Backend Connection - FIXED: Now uses correct endpoints
+  /// Test Backend Connection
   static Future<bool> testConnection() async {
     try {
       print('🔗 Testing connection to: $baseUrl');
@@ -44,7 +44,7 @@ class MpesaService {
     }
   }
 
-  /// Initiates M-Pesa STK Push Payment - IMPROVED: Better error handling
+  /// Initiates M-Pesa STK Push Payment - Better error handling
   static Future<Map<String, dynamic>> initiatePayment({
     required String userId,
     required String phone,
@@ -162,7 +162,7 @@ class MpesaService {
     }
   }
 
-  /// Saves Payment to Firestore using Payment Model - IMPROVED: Added error field
+  /// Saves Payment to Firestore using Payment Model
   static Future<void> savePaymentToFirestore({
     required String userId,
     required String phone,
