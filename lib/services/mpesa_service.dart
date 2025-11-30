@@ -6,8 +6,7 @@ import '../model/water_usage_model.dart';
 
 class MpesaService {
   // Node.js backend URL - Update this with your actual server IP
-  static const String _baseUrl = 'http://192.168.100.24:5000';
-
+  static const String _baseUrl = 'https://smartpay-billing.onrender.com';
   static String get baseUrl => _baseUrl;
 
   /// Test Backend Connection

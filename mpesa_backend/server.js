@@ -5,11 +5,20 @@ const axios = require("axios");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const admin = require("firebase-admin");
-const serviceAccount = require("./serviceAccountKey.json");
-
-// Initialize Firebase Admin
+// Initialize Firebase Admin with environment variables
 admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
+    credential: admin.credential.cert({
+        "type": "service_account",
+        "project_id": process.env.FIREBASE_PROJECT_ID,
+        "private_key_id": "2e88390fb632498fa9a424032ca06523b6cbee9f",
+        "private_key": process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        "client_email": process.env.FIREBASE_CLIENT_EMAIL,
+        "client_id": "108924131740519602422",
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40smartpay-9558e.iam.gserviceaccount.com"
+    }),
 });
 
 const db = admin.firestore();
@@ -517,8 +526,7 @@ app.listen(PORT, "0.0.0.0", () => {
     console.log(`💧 Water Rate: 1 KES = 1 litre`);
     console.log(`💰 ANY AMOUNT ACCEPTED - No restrictions`);
     console.log(`📍 Local: http://localhost:${PORT}`);
-    console.log(`📍 Network: http://192.168.100.24:${PORT}`);
-    console.log(`✅ Test endpoint: http://192.168.100.24:${PORT}/test`);
-    console.log(`💧 Health check: http://192.168.100.24:${PORT}/health`);
-    console.log(`🐛 Debug payment: http://192.168.100.24:${PORT}/api/debug-payment/{transactionId}`);
+    console.log(`🌐 Public: https://smartpay-billing.onrender.com`);
+    console.log(`✅ Test endpoint: https://smartpay-billing.onrender.com/test`);
+    console.log(`💧 Health check: https://smartpay-billing.onrender.com/health`);
 });
