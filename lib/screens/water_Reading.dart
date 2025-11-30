@@ -75,7 +75,7 @@ class _WaterReadingScreenState extends State<WaterReadingScreentrail> {
 
       setState(() {
         _paymentHistory = querySnapshot.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
+          final data = doc.data();
           return {
             'id': doc.id,
             ...data,

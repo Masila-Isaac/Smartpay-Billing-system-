@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smartpay/screens/paybill_screen.dart';
 import 'package:smartpay/screens/viewreport.dart';
 import 'package:smartpay/screens/water_Reading.dart';
@@ -9,7 +12,7 @@ import 'package:smartpay/screens/notifications_screen.dart';
 import 'package:smartpay/screens/help_support_screen.dart';
 import 'package:smartpay/services/auth_service.dart';
 
-class Dashboard extends StatelessWidget {
+class Dashboard extends StatefulWidget {
   final String userId;
   final String meterNumber;
   final String userName;
@@ -22,6 +25,135 @@ class Dashboard extends StatelessWidget {
     required this.userName,
     required this.userEmail,
   });
+
+  @override
+  State<Dashboard> createState() => _DashboardState();
+}
+
+class _DashboardState extends State<Dashboard> {
+  double _waterUsed = 0.0;
+  double _remainingLitres = 0.0;
+  double _totalPurchased = 0.0;
+  bool _isLoading = true;
+
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  StreamSubscription? _waterUsageSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupRealTimeWaterData();
+  }
+
+  void _setupRealTimeWaterData() {
+    print(
+        '📊 Setting up real-time water data for meter: ${widget.meterNumber}');
+
+    // Listen to waterUsage collection for real-time updates
+    _waterUsageSubscription = _firestore
+        .collection('waterUsage')
+        .doc(widget.meterNumber)
+        .snapshots()
+        .listen((DocumentSnapshot snapshot) {
+      if (snapshot.exists) {
+        _updateWaterData(snapshot.data() as Map<String, dynamic>);
+      } else {
+        print(
+            '⚠️ No waterUsage document found for meter: ${widget.meterNumber}');
+        // Try clients collection as fallback
+        _setupClientsDataFallback();
+      }
+    }, onError: (error) {
+      print('❌ WaterUsage stream error: $error');
+      _setupClientsDataFallback();
+    });
+  }
+
+  void _setupClientsDataFallback() {
+    // Fallback to clients collection
+    _firestore.collection('clients').doc(widget.meterNumber).snapshots().listen(
+        (DocumentSnapshot snapshot) {
+      if (snapshot.exists) {
+        _updateWaterDataFromClients(snapshot.data() as Map<String, dynamic>);
+      } else {
+        print(
+            '⚠️ No clients document found either for meter: ${widget.meterNumber}');
+        setState(() => _isLoading = false);
+      }
+    }, onError: (error) {
+      print('❌ Clients stream error: $error');
+      setState(() => _isLoading = false);
+    });
+  }
+
+  void _updateWaterData(Map<String, dynamic> waterData) {
+    if (mounted) {
+      setState(() {
+        _waterUsed = (waterData['waterUsed'] ?? 0.0).toDouble();
+        _remainingLitres =
+            (waterData['remainingUnits'] ?? waterData['remainingLitres'] ?? 0.0)
+                .toDouble();
+        _totalPurchased = (waterData['totalUnitsPurchased'] ??
+                waterData['totalLitresPurchased'] ??
+                0.0)
+            .toDouble();
+
+        print('🔄 Water Data Updated from waterUsage:');
+        print('   - Water Used: $_waterUsed L');
+        print('   - Remaining Litres: $_remainingLitres L');
+        print('   - Total Purchased: $_totalPurchased L');
+
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _updateWaterDataFromClients(Map<String, dynamic> clientData) {
+    if (mounted) {
+      setState(() {
+        _waterUsed = (clientData['waterUsed'] ?? 0.0).toDouble();
+        _remainingLitres = (clientData['remainingLitres'] ??
+                clientData['remainingUnits'] ??
+                0.0)
+            .toDouble();
+        _totalPurchased = (clientData['totalLitresPurchased'] ??
+                clientData['totalUnitsPurchased'] ??
+                0.0)
+            .toDouble();
+
+        print('🔄 Water Data Updated from clients:');
+        print('   - Water Used: $_waterUsed L');
+        print('   - Remaining Litres: $_remainingLitres L');
+        print('   - Total Purchased: $_totalPurchased L');
+
+        _isLoading = false;
+      });
+    }
+  }
+
+  String _formatWaterVolume(double litres) {
+    if (litres >= 1000) {
+      return '${(litres / 1000).toStringAsFixed(1)} m³';
+    } else {
+      return '${litres.toStringAsFixed(0)} L';
+    }
+  }
+
+  double _getUsagePercentage() {
+    if (_totalPurchased == 0) return 0.0;
+    return (_waterUsed / _totalPurchased).clamp(0.0, 1.0);
+  }
+
+  String _getUsagePercentageText() {
+    final percentage = _getUsagePercentage() * 100;
+    return '${percentage.toStringAsFixed(1)}% Used';
+  }
+
+  @override
+  void dispose() {
+    _waterUsageSubscription?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +171,7 @@ class Dashboard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Professional Banner with image background
+                    // Professional Banner with REAL data
                     _buildProfessionalBanner(),
                     const SizedBox(height: 32),
 
@@ -52,7 +184,10 @@ class Dashboard extends StatelessWidget {
                       () {
                         _navigateWithSlideTransition(
                           context,
-                          WaterUsageScreen(meterNumber: meterNumber),
+                          WaterUsageScreen(
+                            meterNumber: widget.meterNumber,
+                            userId: widget.userId,
+                          ),
                         );
                       },
                     ),
@@ -66,7 +201,7 @@ class Dashboard extends StatelessWidget {
                       () {
                         _navigateWithSlideTransition(
                           context,
-                          PayBillScreen(meterNumber: meterNumber),
+                          PayBillScreen(meterNumber: widget.meterNumber),
                         );
                       },
                     ),
@@ -80,7 +215,8 @@ class Dashboard extends StatelessWidget {
                       () {
                         _navigateWithSlideTransition(
                           context,
-                          WaterReadingScreentrail(meterNumber: meterNumber),
+                          WaterReadingScreentrail(
+                              meterNumber: widget.meterNumber),
                         );
                       },
                     ),
@@ -94,9 +230,7 @@ class Dashboard extends StatelessWidget {
                       () {
                         _navigateWithSlideTransition(
                           context,
-                          ViewReport(
-                              meterNumber:
-                                  meterNumber), // ✅ Fixed: Added meterNumber parameter
+                          ViewReport(meterNumber: widget.meterNumber),
                         );
                       },
                     ),
@@ -110,7 +244,7 @@ class Dashboard extends StatelessWidget {
     );
   }
 
-  // Professional Banner Section with Image Background
+  // Professional Banner Section with REAL data
   Widget _buildProfessionalBanner() {
     return Container(
       width: double.infinity,
@@ -202,7 +336,7 @@ class Dashboard extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            userName.split(' ')[0],
+                            widget.userName.split(' ')[0],
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 24,
@@ -212,7 +346,7 @@ class Dashboard extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            "Meter: $meterNumber",
+                            "Meter: ${widget.meterNumber}",
                             style: TextStyle(
                               color: Colors.white.withOpacity(0.8),
                               fontSize: 11,
@@ -249,39 +383,10 @@ class Dashboard extends StatelessWidget {
                   ],
                 ),
 
-                // Usage Statistics
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.2),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _buildBannerStat(
-                        "Volume Used",
-                        "2,450 L",
-                        Icons.water_damage_outlined,
-                      ),
-                      Container(
-                        height: 30,
-                        width: 1,
-                        color: Colors.white.withOpacity(0.3),
-                      ),
-                      _buildBannerStat(
-                        "Remaining",
-                        "7,550 L",
-                        Icons.inventory_2_outlined,
-                      ),
-                    ],
-                  ),
-                ),
+                // Usage Statistics with REAL DATA
+                _isLoading ? _buildLoadingStats() : _buildRealStats(),
 
-                // Progress Bar Section
+                // Progress Bar Section with REAL DATA
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -298,7 +403,7 @@ class Dashboard extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          "24.5% Used",
+                          _isLoading ? "Loading..." : _getUsagePercentageText(),
                           style: TextStyle(
                             color: Colors.white.withOpacity(0.9),
                             fontSize: 11,
@@ -308,41 +413,115 @@ class Dashboard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Container(
-                      height: 5,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 25,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    Color(0xFF00D4FF),
-                                    Color(0xFF0099FF),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(3),
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 75,
-                            child: Container(
-                              color: Colors.transparent,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    _buildProgressBar(),
                   ],
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingStats() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.2),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildBannerStat(
+            "Volume Used",
+            "Loading...",
+            Icons.water_damage_outlined,
+          ),
+          Container(
+            height: 30,
+            width: 1,
+            color: Colors.white.withOpacity(0.3),
+          ),
+          _buildBannerStat(
+            "Remaining",
+            "Loading...",
+            Icons.inventory_2_outlined,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRealStats() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.2),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildBannerStat(
+            "Volume Used",
+            _formatWaterVolume(_waterUsed),
+            Icons.water_damage_outlined,
+          ),
+          Container(
+            height: 30,
+            width: 1,
+            color: Colors.white.withOpacity(0.3),
+          ),
+          _buildBannerStat(
+            "Remaining",
+            _formatWaterVolume(_remainingLitres),
+            Icons.inventory_2_outlined,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProgressBar() {
+    final usagePercentage = _getUsagePercentage();
+    final usedWidth = usagePercentage * 100;
+    final remainingWidth = 100 - usedWidth;
+
+    return Container(
+      height: 5,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: usedWidth.round(),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [
+                    Color(0xFF00D4FF),
+                    Color(0xFF0099FF),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: remainingWidth.round(),
+            child: Container(
+              color: Colors.transparent,
             ),
           ),
         ],
@@ -617,10 +796,10 @@ class Dashboard extends StatelessWidget {
         _navigateWithSlideTransition(
           context,
           ProfileScreen(
-            userId: userId,
-            userName: userName,
-            userEmail: userEmail,
-            meterNumber: meterNumber,
+            userId: widget.userId,
+            userName: widget.userName,
+            userEmail: widget.userEmail,
+            meterNumber: widget.meterNumber,
           ),
         );
         break;

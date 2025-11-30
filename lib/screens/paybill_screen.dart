@@ -182,7 +182,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
                 _buildTextField(
                   label: 'Amount (KES)',
                   controller: amountController,
-                  hintText: 'e.g. 1000',
+                  hintText: 'e.g. 1, 10, 50, 100, 1000',
                   icon: Icons.attach_money_outlined,
                   keyboardType: TextInputType.number,
                 ),
@@ -194,7 +194,35 @@ class _PayBillScreenState extends State<PayBillScreen> {
                   icon: Icons.phone_android_outlined,
                   keyboardType: TextInputType.phone,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 8),
+                // Info message about any amount
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          color: Colors.blue[700], size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "Any amount accepted - 1 KES = 1 litre of water",
+                          style: TextStyle(
+                            color: Colors.blue[800],
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   height: 50,
@@ -309,6 +337,15 @@ class _PayBillScreenState extends State<PayBillScreen> {
             style: TextStyle(
               fontSize: 16,
               color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Water Purchased: ${amountController.text} litres',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.blue[700],
+              fontWeight: FontWeight.w600,
             ),
           ),
           if (_paymentReference != null && _paymentReference != 'N/A') ...[
@@ -455,7 +492,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
     final amountText = amountController.text.trim();
     final amount = double.tryParse(amountText) ?? 0.0;
 
-    // Validation
+    // Validation - REMOVED THE 10 KES MINIMUM
     if (phone.isEmpty) {
       _showErrorDialog('Please enter your phone number');
       return;
@@ -472,12 +509,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
     }
 
     if (amount <= 0) {
-      _showErrorDialog('Please enter a valid amount');
-      return;
-    }
-
-    if (amount < 10) {
-      _showErrorDialog('Minimum payment amount is KES 10');
+      _showErrorDialog('Please enter a valid amount greater than 0 KES');
       return;
     }
 

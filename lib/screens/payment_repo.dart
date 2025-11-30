@@ -1,4 +1,3 @@
-// lib/repositories/payment_repository.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smartpay/model/payment_model.dart';
 

@@ -44,10 +44,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _initializeData() async {
     try {
-      // Initialize controllers with widget data first
+      // Initialize with widget data first
       _nameController.text = widget.userName;
 
-      // Then try to load additional data from Firestore
+      // Load user data from Firestore
       await _loadUserData();
     } catch (e) {
       print('Error initializing data: $e');
@@ -66,21 +66,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (userDoc.exists) {
         setState(() {
           _userData = userDoc.data() as Map<String, dynamic>;
-          // Only update controllers if they're empty or if we have new data
-          if (_nameController.text.isEmpty) {
-            _nameController.text = _userData['name'] ?? widget.userName;
-          }
+          // Update controllers with Firestore data
+          _nameController.text = _userData['name'] ?? widget.userName;
           _phoneController.text = _userData['phone'] ?? '';
           _addressController.text = _userData['address'] ?? '';
           _locationController.text = _userData['location'] ?? '';
           _isLoading = false;
         });
+
+        print('✅ User data loaded successfully from Firestore');
+        print('📊 User Data: $_userData');
       } else {
         // If user document doesn't exist, create one with basic data
+        print('📝 Creating new user document in Firestore...');
         await _createUserDocument();
       }
     } catch (e) {
-      print('Error loading user data: $e');
+      print('❌ Error loading user data: $e');
       setState(() {
         _isLoading = false;
       });
@@ -89,7 +91,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _createUserDocument() async {
     try {
-      await _firestore.collection('users').doc(widget.userId).set({
+      final userData = {
         'name': widget.userName,
         'email': widget.userEmail,
         'meterNumber': widget.meterNumber,
@@ -98,12 +100,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'location': '',
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+
+      await _firestore.collection('users').doc(widget.userId).set(userData);
+
+      print('✅ New user document created: $userData');
 
       // Reload data after creating document
       await _loadUserData();
     } catch (e) {
-      print('Error creating user document: $e');
+      print('❌ Error creating user document: $e');
       setState(() {
         _isLoading = false;
       });
@@ -111,26 +117,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _updateUserData() async {
+    // Validate required fields
+    if (_nameController.text.trim().isEmpty) {
+      _showErrorDialog('Please enter your name');
+      return;
+    }
+
     try {
       setState(() {
         _isLoading = true;
       });
 
-      await _firestore.collection('users').doc(widget.userId).update({
+      final updatedData = {
         'name': _nameController.text.trim(),
         'phone': _phoneController.text.trim(),
         'address': _addressController.text.trim(),
         'location': _locationController.text.trim(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
 
-      // Update account_details collection as well
+      // Update users collection
+      await _firestore
+          .collection('users')
+          .doc(widget.userId)
+          .update(updatedData);
+
+      print('✅ User data updated in Firestore: $updatedData');
+
+      // Also update account_details collection for consistency
       await _firestore.collection('account_details').doc(widget.userId).set({
-        'name': _nameController.text.trim(),
-        'phone': _phoneController.text.trim(),
-        'address': _addressController.text.trim(),
-        'location': _locationController.text.trim(),
-        'updatedAt': FieldValue.serverTimestamp(),
+        ...updatedData,
+        'email': widget.userEmail,
+        'meterNumber': widget.meterNumber,
       }, SetOptions(merge: true));
 
       // Reload data to get updated information
@@ -154,7 +172,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       }
     } catch (e) {
-      print('Error updating user data: $e');
+      print('❌ Error updating user data: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -183,7 +201,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _cancelEdit() {
-    // Reset controllers to original values from Firestore or widget data
+    // Reset controllers to original values from Firestore
     _nameController.text = _userData['name'] ?? widget.userName;
     _phoneController.text = _userData['phone'] ?? '';
     _addressController.text = _userData['address'] ?? '';
@@ -192,6 +210,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() {
       _isEditing = false;
     });
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.red),
+            SizedBox(width: 8),
+            Text('Validation Error'),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -240,8 +280,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Loading your profile...',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
               ),
             )
           : SingleChildScrollView(
@@ -258,6 +312,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                   // Personal Details Section
                   _buildSectionTitle('Personal Details'),
+                  const SizedBox(height: 16),
+
+                  // Information message about data storage
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline,
+                            color: Colors.blue[700], size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _isEditing
+                                ? "Your information will be saved to your account"
+                                : "Your profile information is securely stored",
+                            style: TextStyle(
+                              color: Colors.blue[800],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 16),
 
                   // Editable Form Fields
@@ -410,6 +495,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _buildInfoRow('User ID', widget.userId),
           const SizedBox(height: 12),
           _buildInfoRow('Email', widget.userEmail),
+          const SizedBox(height: 12),
+          _buildInfoRow(
+              'Phone',
+              _phoneController.text.isNotEmpty
+                  ? _phoneController.text
+                  : 'Not set'),
+          const SizedBox(height: 12),
+          _buildInfoRow(
+              'Location',
+              _locationController.text.isNotEmpty
+                  ? _locationController.text
+                  : 'Not set'),
         ],
       ),
     );
@@ -434,9 +531,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
-              color: Colors.black87,
+              color: value == 'Not set' ? Colors.grey[500] : Colors.black87,
+              fontStyle:
+                  value == 'Not set' ? FontStyle.italic : FontStyle.normal,
             ),
           ),
         ),
@@ -486,7 +585,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           _buildEditableField(
             icon: Icons.person_outline,
-            label: 'Full Name',
+            label: 'Full Name *',
             controller: _nameController,
             hintText: 'Enter your full name',
             isEditable: _isEditing,
@@ -505,7 +604,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             icon: Icons.home_outlined,
             label: 'Address',
             controller: _addressController,
-            hintText: 'Enter your address',
+            hintText: 'Enter your complete address',
             isEditable: _isEditing,
             maxLines: 2,
           ),
@@ -514,7 +613,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             icon: Icons.location_on_outlined,
             label: 'Location',
             controller: _locationController,
-            hintText: 'Enter your location',
+            hintText: 'Enter your city/town',
             isEditable: _isEditing,
           ),
         ],
@@ -569,6 +668,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           hintStyle: TextStyle(color: Colors.grey[500]),
                           border: InputBorder.none,
                           contentPadding: EdgeInsets.zero,
+                          isDense: true,
                         ),
                         style: const TextStyle(
                           fontSize: 14,
@@ -608,58 +708,72 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildActionButtons() {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: OutlinedButton(
-            onPressed: _cancelEdit,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.grey,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              side: BorderSide(color: Colors.grey[300]!),
-            ),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 16,
-              ),
-            ),
+        Text(
+          '* Required field',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[500],
+            fontStyle: FontStyle.italic,
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: ElevatedButton(
-            onPressed: _isLoading ? null : _updateUserData,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF667eea),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              elevation: 2,
-            ),
-            child: _isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  )
-                : const Text(
-                    'Save Changes',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                    ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _cancelEdit,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.grey,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
-          ),
+                  side: BorderSide(color: Colors.grey[300]!),
+                ),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _updateUserData,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF667eea),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 2,
+                ),
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Text(
+                        'Save Changes',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+              ),
+            ),
+          ],
         ),
       ],
     );

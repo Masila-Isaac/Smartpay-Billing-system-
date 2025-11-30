@@ -183,7 +183,7 @@ class MpesaService {
         status: status,
         transactionId: transactionId,
         timestamp: DateTime.now(),
-        unitsPurchased: calculateUnits(amount),
+        litresPurchased: calculateUnits(amount),
         processed: false,
         reference: reference,
         error: error,

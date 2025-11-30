@@ -1,4 +1,3 @@
-// lib/models/payment_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Payment {
@@ -10,7 +9,7 @@ class Payment {
   final String status;
   final String transactionId;
   final DateTime timestamp;
-  final double unitsPurchased;
+  final double litresPurchased;
   final bool processed;
   final double? conversionRate;
   final String? reference;
@@ -27,7 +26,7 @@ class Payment {
     required this.status,
     required this.transactionId,
     required this.timestamp,
-    this.unitsPurchased = 0,
+    this.litresPurchased = 0,
     this.processed = false,
     this.conversionRate,
     this.reference,
@@ -48,7 +47,7 @@ class Payment {
       status: data['status'] ?? 'Pending',
       transactionId: data['transactionId'] ?? '',
       timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      unitsPurchased: (data['unitsPurchased'] ?? 0).toDouble(),
+      litresPurchased: (data['litresPurchased'] ?? 0).toDouble(),
       processed: data['processed'] ?? false,
       conversionRate: data['conversionRate']?.toDouble(),
       reference: data['reference'],
@@ -74,7 +73,7 @@ class Payment {
       'status': status,
       'transactionId': transactionId,
       'timestamp': Timestamp.fromDate(timestamp),
-      'unitsPurchased': unitsPurchased,
+      'litresPurchased': litresPurchased,
       'processed': processed,
       if (conversionRate != null) 'conversionRate': conversionRate,
       if (reference != null) 'reference': reference,
@@ -101,7 +100,7 @@ class Payment {
   bool get isProcessed => processed;
 
   String get formattedAmount => 'KES ${amount.toStringAsFixed(2)}';
-  String get formattedUnits => '${unitsPurchased.toStringAsFixed(2)} L';
+  String get formattedUnits => '${litresPurchased.toStringAsFixed(2)} L';
 
   // ADDED: Formatted date for display
   String get formattedDate {
@@ -140,7 +139,7 @@ class Payment {
       status: status ?? this.status,
       transactionId: transactionId ?? this.transactionId,
       timestamp: timestamp ?? this.timestamp,
-      unitsPurchased: unitsPurchased ?? this.unitsPurchased,
+      litresPurchased: litresPurchased ?? this.litresPurchased,
       processed: processed ?? this.processed,
       conversionRate: conversionRate ?? this.conversionRate,
       reference: reference ?? this.reference,
@@ -161,7 +160,7 @@ class Payment {
         'status: $status, '
         'transactionId: $transactionId, '
         'timestamp: $timestamp, '
-        'unitsPurchased: $unitsPurchased, '
+        'litresPurchased: $litresPurchased, '
         'processed: $processed, '
         'conversionRate: $conversionRate, '
         'reference: $reference, '

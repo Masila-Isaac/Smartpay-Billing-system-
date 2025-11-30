@@ -20,6 +20,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final TextEditingController passwordController = TextEditingController();
 
   final FirebaseAuthService authService = FirebaseAuthService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   @override
   void dispose() {
@@ -56,33 +57,66 @@ class _SignUpScreenState extends State<SignUpScreen> {
         String meterNumber = "MTR${DateTime.now().millisecondsSinceEpoch}";
 
         // Create user document in Firestore
-        await FirebaseFirestore.instance.collection("users").doc(user.uid).set({
+        await _firestore.collection("users").doc(user.uid).set({
           "email": emailController.text.trim(),
           "name": nameController.text.trim(),
           "meterNumber": meterNumber,
+          "phone": "", // Initialize empty phone
+          "address": "", // Initialize empty address
+          "location": "", // Initialize empty location
           "createdAt": FieldValue.serverTimestamp(),
           "updatedAt": FieldValue.serverTimestamp(),
         });
 
-        // Create initial water usage document
-        await FirebaseFirestore.instance
-            .collection("waterUsage")
-            .doc(meterNumber)
-            .set({
+        // Create clients collection document (this is what payments update)
+        await _firestore.collection("clients").doc(meterNumber).set({
           "meterNumber": meterNumber,
-          "status": "active",
-          "remainingUnits": 0.0,
-          "waterUsed": 0.0,
-          "totalUnitsPurchased": 0.0,
           "userId": user.uid,
+          "phone": "",
+          "waterUsed": 0.0,
+          "remainingLitres": 0.0,
+          "totalLitresPurchased": 0.0,
+          "lastTopUp": FieldValue.serverTimestamp(),
+          "lastUpdated": FieldValue.serverTimestamp(),
+          "status": "active",
+          "createdAt": FieldValue.serverTimestamp(),
+        });
+
+        // Create waterUsage collection document
+        await _firestore.collection("waterUsage").doc(meterNumber).set({
+          "meterNumber": meterNumber,
+          "userId": user.uid,
+          "phone": "",
+          "waterUsed": 0.0,
+          "remainingUnits": 0.0,
+          "totalUnitsPurchased": 0.0,
+          "timestamp": FieldValue.serverTimestamp(),
+          "lastUpdated": FieldValue.serverTimestamp(),
+          "status": "active",
+        });
+
+        // Create account_details collection document
+        await _firestore.collection("account_details").doc(user.uid).set({
+          "userId": user.uid,
+          "meterNumber": meterNumber,
+          "name": nameController.text.trim(),
+          "email": emailController.text.trim(),
+          "phone": "",
+          "address": "",
+          "location": "",
           "createdAt": FieldValue.serverTimestamp(),
           "updatedAt": FieldValue.serverTimestamp(),
         });
+
+        print('✅ User created successfully across all collections');
+        print('📊 User ID: ${user.uid}');
+        print('📊 Meter Number: $meterNumber');
 
         // Show success message
         _showSuccessDialog(meterNumber);
       }
     } catch (e) {
+      print('❌ Sign up error: $e');
       _showErrorDialog('Sign up failed: $e');
     } finally {
       if (mounted) {
@@ -199,6 +233,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ... (keep all your existing UI code exactly the same)
             Row(
               children: [
                 Container(
