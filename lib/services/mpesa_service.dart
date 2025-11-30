@@ -1,23 +1,19 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class MpesaService {
   // ✅ Node server URL configuration
   static const String _baseUrl =
-      'http://10.10.226.251:5000'; //change every time you have to run for you own good
+      'http://10.0.82.3:5000'; //change every time you have to run for you own good
   //static const String _baseUrl = 'https://unlaudable-samual-overconstantly.ngrok-free.dev';
 
-  // Alternative URLs for different environments
-  static const String _baseUrlEmulator = "http://10.0.2.2:5000";
-  static const String _baseUrlPhone = "http://10.10.13.194:5000";
 
   /// Get the appropriate base URL based on environment
   static String get baseUrl {
-    return _baseUrl; // Using ngrok for public access
+    return _baseUrl; // Using ngrrok for public access
     // return _baseUrlEmulator; // For emulator
-    // return _baseUrlPhone; // For real phone on local network
+    // return _baseUrlPhone; // For real phone on local networkip
   }
 
   /// Initiates M-Pesa STK Push payment

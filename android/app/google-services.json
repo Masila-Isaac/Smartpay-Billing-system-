@@ -13,7 +13,20 @@
           "package_name": "com.example.smartpay"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "609566359109-hqsvpma8rmsce86nbjri3neci7e1cuc9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.smartpay",
+            "certificate_hash": "85a91c865c8065578b0ead2c51287e48a4fd1df8"
+          }
+        },
+        {
+          "client_id": "609566359109-va384teqvn7mq5d2jgghuf2sko4t5tpg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyC0HsSHd3rAc6oH3yB8moa_vrHHud4oNtU"
@@ -21,7 +34,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "609566359109-va384teqvn7mq5d2jgghuf2sko4t5tpg.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "609566359109-j650i2d55n9k0p2ou8b7h5f26qjr116a.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.smartpay"
+              }
+            }
+          ]
         }
       }
     }
