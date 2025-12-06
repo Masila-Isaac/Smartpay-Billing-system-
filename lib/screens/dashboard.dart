@@ -35,19 +35,34 @@ class _DashboardState extends State<Dashboard> {
   double _remainingLitres = 0.0;
   double _totalPurchased = 0.0;
   bool _isLoading = true;
+  bool _hasValidMeterNumber = false;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   StreamSubscription? _dashboardDataSubscription;
   StreamSubscription? _waterUsageSubscription;
+  StreamSubscription? _clientsSubscription;
 
   @override
   void initState() {
     super.initState();
-    _setupDashboardDataListener();
-    _setupWaterDataBackup();
+    print('📱 Dashboard initialized for user: ${widget.userId}');
+    print('📊 Meter Number: "${widget.meterNumber}"');
+    print('👤 User Name: ${widget.userName}');
+
+    // Check if we have a valid meter number
+    _hasValidMeterNumber = widget.meterNumber.isNotEmpty;
+    print('✅ Has valid meter number: $_hasValidMeterNumber');
+
+    // Initialize data immediately
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchInitialData();
+    });
+
+    // Set up listeners only if we have valid data
+    _setupListeners();
   }
 
-  void _setupDashboardDataListener() {
+  void _setupListeners() {
     print('📊 Setting up dashboard data listener for user: ${widget.userId}');
 
     _dashboardDataSubscription = _firestore
@@ -58,13 +73,125 @@ class _DashboardState extends State<Dashboard> {
       if (snapshot.exists) {
         _updateFromDashboardData(snapshot.data() as Map<String, dynamic>);
       } else {
-        print('⚠️ No dashboard data found, using backup sources');
-        _setupWaterDataBackup();
+        print('⚠️ No dashboard data found, trying other sources');
+        // Only try water data if we have a valid meter number
+        if (_hasValidMeterNumber) {
+          _setupWaterDataBackup();
+        } else {
+          print('⚠️ Skipping water data backup - no valid meter number');
+          setState(() => _isLoading = false);
+        }
       }
     }, onError: (error) {
       print('❌ Dashboard data stream error: $error');
-      _setupWaterDataBackup();
+      if (_hasValidMeterNumber) {
+        _setupWaterDataBackup();
+      } else {
+        setState(() => _isLoading = false);
+      }
     });
+  }
+
+  void _setupWaterDataBackup() {
+    if (!_hasValidMeterNumber) {
+      print('⚠️ Cannot setup water data backup - meter number is empty');
+      return;
+    }
+
+    print('🔄 Setting up backup water data listener');
+
+    _waterUsageSubscription = _firestore
+        .collection('waterUsage')
+        .doc(widget.meterNumber)
+        .snapshots()
+        .listen((DocumentSnapshot snapshot) {
+      if (snapshot.exists) {
+        _updateFromWaterUsage(snapshot.data() as Map<String, dynamic>);
+      } else {
+        print('⚠️ No waterUsage data found, trying clients collection');
+        _setupClientsDataFallback();
+      }
+    }, onError: (error) {
+      print('❌ WaterUsage stream error: $error');
+      _setupClientsDataFallback();
+    });
+  }
+
+  void _setupClientsDataFallback() {
+    if (!_hasValidMeterNumber) {
+      print('⚠️ Cannot setup clients data fallback - meter number is empty');
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    print('🔄 Setting up clients data fallback');
+
+    _clientsSubscription = _firestore
+        .collection('clients')
+        .doc(widget.meterNumber)
+        .snapshots()
+        .listen((DocumentSnapshot snapshot) {
+      if (snapshot.exists) {
+        _updateFromClients(snapshot.data() as Map<String, dynamic>);
+      } else {
+        print('⚠️ No data found in any source');
+        setState(() => _isLoading = false);
+      }
+    }, onError: (error) {
+      print('❌ Clients stream error: $error');
+      setState(() => _isLoading = false);
+    });
+  }
+
+  Future<void> _fetchInitialData() async {
+    print('🔄 Fetching initial dashboard data...');
+
+    try {
+      // Try dashboard_data first (uses userId, not meter number)
+      DocumentSnapshot dashboardSnapshot = await _firestore
+          .collection('dashboard_data')
+          .doc(widget.userId)
+          .get();
+
+      if (dashboardSnapshot.exists) {
+        print('✅ Found dashboard_data');
+        _updateFromDashboardData(
+            dashboardSnapshot.data() as Map<String, dynamic>);
+        return;
+      }
+
+      // Only try waterUsage if we have a valid meter number
+      if (_hasValidMeterNumber) {
+        DocumentSnapshot waterSnapshot = await _firestore
+            .collection('waterUsage')
+            .doc(widget.meterNumber)
+            .get();
+
+        if (waterSnapshot.exists) {
+          print('✅ Found waterUsage data');
+          _updateFromWaterUsage(waterSnapshot.data() as Map<String, dynamic>);
+          return;
+        }
+
+        // Try clients
+        DocumentSnapshot clientsSnapshot = await _firestore
+            .collection('clients')
+            .doc(widget.meterNumber)
+            .get();
+
+        if (clientsSnapshot.exists) {
+          print('✅ Found clients data');
+          _updateFromClients(clientsSnapshot.data() as Map<String, dynamic>);
+          return;
+        }
+      }
+
+      print('⚠️ No initial data found or no valid meter number');
+      setState(() => _isLoading = false);
+    } catch (e) {
+      print('❌ Error fetching initial data: $e');
+      setState(() => _isLoading = false);
+    }
   }
 
   void _updateFromDashboardData(Map<String, dynamic> dashboardData) {
@@ -83,25 +210,6 @@ class _DashboardState extends State<Dashboard> {
         _isLoading = false;
       });
     }
-  }
-
-  void _setupWaterDataBackup() {
-    print('🔄 Setting up backup water data listener');
-
-    _waterUsageSubscription = _firestore
-        .collection('waterUsage')
-        .doc(widget.meterNumber)
-        .snapshots()
-        .listen((DocumentSnapshot snapshot) {
-      if (snapshot.exists) {
-        _updateFromWaterUsage(snapshot.data() as Map<String, dynamic>);
-      } else {
-        _setupClientsDataFallback();
-      }
-    }, onError: (error) {
-      print('❌ WaterUsage stream error: $error');
-      _setupClientsDataFallback();
-    });
   }
 
   void _updateFromWaterUsage(Map<String, dynamic> waterData) {
@@ -124,21 +232,6 @@ class _DashboardState extends State<Dashboard> {
         _isLoading = false;
       });
     }
-  }
-
-  void _setupClientsDataFallback() {
-    _firestore.collection('clients').doc(widget.meterNumber).snapshots().listen(
-        (DocumentSnapshot snapshot) {
-      if (snapshot.exists) {
-        _updateFromClients(snapshot.data() as Map<String, dynamic>);
-      } else {
-        print('⚠️ No data found in any source');
-        setState(() => _isLoading = false);
-      }
-    }, onError: (error) {
-      print('❌ Clients stream error: $error');
-      setState(() => _isLoading = false);
-    });
   }
 
   void _updateFromClients(Map<String, dynamic> clientData) {
@@ -198,11 +291,67 @@ class _DashboardState extends State<Dashboard> {
   void dispose() {
     _dashboardDataSubscription?.cancel();
     _waterUsageSubscription?.cancel();
+    _clientsSubscription?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading && _waterUsed == 0 && _remainingLitres == 0) {
+      // Show loading screen on first load
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blueAccent.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Image.asset(
+                  'assets/images/logo.png',
+                  height: 80,
+                  errorBuilder: (context, error, stackTrace) => const Icon(
+                      Icons.water_drop,
+                      size: 80,
+                      color: Colors.blueAccent),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'SmartPay',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.blueAccent,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Welcome, ${widget.userName}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
+                ),
+              ),
+              const SizedBox(height: 30),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 20),
+              const Text(
+                'Loading your dashboard...',
+                style: TextStyle(
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final remainingBalance = _calculateRemainingBalance();
 
     return Scaffold(
@@ -285,6 +434,11 @@ class _DashboardState extends State<Dashboard> {
   }
 
   Widget _buildProfessionalBanner(double remainingBalance) {
+    String displayMeterNumber = widget.meterNumber;
+    if (!_hasValidMeterNumber) {
+      displayMeterNumber = 'Meter number not set';
+    }
+
     return Container(
       width: double.infinity,
       height: 240,
@@ -369,7 +523,7 @@ class _DashboardState extends State<Dashboard> {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            widget.userName.split(' ')[0],
+                            widget.userName,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 24,
@@ -379,7 +533,7 @@ class _DashboardState extends State<Dashboard> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            "Meter: ${widget.meterNumber}",
+                            displayMeterNumber,
                             style: TextStyle(
                               color: Colors.white.withOpacity(0.8),
                               fontSize: 11,
@@ -668,80 +822,88 @@ class _DashboardState extends State<Dashboard> {
               ),
             ],
           ),
-          PopupMenuButton<String>(
-            icon: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(10),
+          if (_isLoading)
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            PopupMenuButton<String>(
+              icon: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.more_vert,
+                  color: Colors.black54,
+                  size: 22,
+                ),
               ),
-              child: const Icon(
-                Icons.more_vert,
-                color: Colors.black54,
-                size: 22,
-              ),
+              onSelected: (value) {
+                _handleMenuSelection(context, value);
+              },
+              itemBuilder: (BuildContext context) => [
+                const PopupMenuItem<String>(
+                  value: 'profile',
+                  child: Row(
+                    children: [
+                      Icon(Icons.person_outline,
+                          size: 20, color: Colors.black54),
+                      SizedBox(width: 12),
+                      Text('Profile'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'notifications',
+                  child: Row(
+                    children: [
+                      Icon(Icons.notifications_outlined,
+                          size: 20, color: Colors.black54),
+                      SizedBox(width: 12),
+                      Text('Notifications'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'help',
+                  child: Row(
+                    children: [
+                      Icon(Icons.help_outline, size: 20, color: Colors.black54),
+                      SizedBox(width: 12),
+                      Text('Help & Support'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'settings',
+                  child: Row(
+                    children: [
+                      Icon(Icons.settings_outlined,
+                          size: 20, color: Colors.black54),
+                      SizedBox(width: 12),
+                      Text('Settings'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout_outlined, size: 20, color: Colors.red),
+                      SizedBox(width: 12),
+                      Text(
+                        'Logout',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            onSelected: (value) {
-              _handleMenuSelection(context, value);
-            },
-            itemBuilder: (BuildContext context) => [
-              const PopupMenuItem<String>(
-                value: 'profile',
-                child: Row(
-                  children: [
-                    Icon(Icons.person_outline, size: 20, color: Colors.black54),
-                    SizedBox(width: 12),
-                    Text('Profile'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem<String>(
-                value: 'notifications',
-                child: Row(
-                  children: [
-                    Icon(Icons.notifications_outlined,
-                        size: 20, color: Colors.black54),
-                    SizedBox(width: 12),
-                    Text('Notifications'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem<String>(
-                value: 'help',
-                child: Row(
-                  children: [
-                    Icon(Icons.help_outline, size: 20, color: Colors.black54),
-                    SizedBox(width: 12),
-                    Text('Help & Support'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem<String>(
-                value: 'settings',
-                child: Row(
-                  children: [
-                    Icon(Icons.settings_outlined,
-                        size: 20, color: Colors.black54),
-                    SizedBox(width: 12),
-                    Text('Settings'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem<String>(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout_outlined, size: 20, color: Colors.red),
-                    SizedBox(width: 12),
-                    Text(
-                      'Logout',
-                      style: TextStyle(color: Colors.red),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );
