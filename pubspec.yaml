@@ -23,6 +23,7 @@ dependencies:
   firebase_storage: ^13.0.4
   firebase_analytics: ^12.0.4
   firebase_data_connect: ^0.2.1+2
+  google_sign_in: ^6.2.1
 
   # Networking & Web
   http: ^1.2.1
