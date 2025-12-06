@@ -32,6 +32,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // Text editing controllers
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _idNumberController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _locationController = TextEditingController();
 
@@ -44,10 +45,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _initializeData() async {
     try {
-      // Initialize with widget data first
-      _nameController.text = widget.userName;
-
-      // Load user data from Firestore
       await _loadUserData();
     } catch (e) {
       print('Error initializing data: $e');
@@ -69,15 +66,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           // Update controllers with Firestore data
           _nameController.text = _userData['name'] ?? widget.userName;
           _phoneController.text = _userData['phone'] ?? '';
+          _idNumberController.text = _userData['idNumber'] ?? '';
           _addressController.text = _userData['address'] ?? '';
           _locationController.text = _userData['location'] ?? '';
           _isLoading = false;
         });
 
         print('✅ User data loaded successfully from Firestore');
-        print('📊 User Data: $_userData');
       } else {
-        // If user document doesn't exist, create one with basic data
         print('📝 Creating new user document in Firestore...');
         await _createUserDocument();
       }
@@ -96,6 +92,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'email': widget.userEmail,
         'meterNumber': widget.meterNumber,
         'phone': '',
+        'idNumber': '',
         'address': '',
         'location': '',
         'createdAt': FieldValue.serverTimestamp(),
@@ -104,7 +101,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       await _firestore.collection('users').doc(widget.userId).set(userData);
 
-      print('✅ New user document created: $userData');
+      print('✅ New user document created');
 
       // Reload data after creating document
       await _loadUserData();
@@ -123,6 +120,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
+    if (_phoneController.text.trim().isEmpty) {
+      _showErrorDialog('Please enter your phone number');
+      return;
+    }
+
+    if (_idNumberController.text.trim().isEmpty) {
+      _showErrorDialog('Please enter your ID number');
+      return;
+    }
+
     try {
       setState(() {
         _isLoading = true;
@@ -131,6 +138,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final updatedData = {
         'name': _nameController.text.trim(),
         'phone': _phoneController.text.trim(),
+        'idNumber': _idNumberController.text.trim(),
         'address': _addressController.text.trim(),
         'location': _locationController.text.trim(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -142,14 +150,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .doc(widget.userId)
           .update(updatedData);
 
-      print('✅ User data updated in Firestore: $updatedData');
+      print('✅ User data updated in Firestore');
 
-      // Also update account_details collection for consistency
-      await _firestore.collection('account_details').doc(widget.userId).set({
-        ...updatedData,
-        'email': widget.userEmail,
-        'meterNumber': widget.meterNumber,
-      }, SetOptions(merge: true));
+      // Also update other collections for consistency
+      await _updateRelatedCollections(updatedData);
 
       // Reload data to get updated information
       await _loadUserData();
@@ -194,6 +198,48 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _updateRelatedCollections(
+      Map<String, dynamic> updatedData) async {
+    try {
+      // Get account details
+      final userDoc =
+          await _firestore.collection('users').doc(widget.userId).get();
+      final userData = userDoc.data() as Map<String, dynamic>;
+
+      final String accountNumber = userData['accountNumber'] ?? '';
+      final String meterNumber = userData['meterNumber'] ?? widget.meterNumber;
+
+      // Update clients collection
+      await _firestore.collection('clients').doc(meterNumber).update({
+        'name': updatedData['name'],
+        'phone': updatedData['phone'],
+        'idNumber': updatedData['idNumber'],
+        'address': updatedData['address'],
+        'location': updatedData['location'],
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Update account_details collection
+      await _firestore.collection('account_details').doc(widget.userId).set({
+        ...updatedData,
+        'email': widget.userEmail,
+        'meterNumber': meterNumber,
+        'accountNumber': accountNumber,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // Update waterUsage collection
+      await _firestore.collection('waterUsage').doc(meterNumber).update({
+        'phone': updatedData['phone'],
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Related collections updated');
+    } catch (e) {
+      print('❌ Error updating related collections: $e');
+    }
+  }
+
   void _toggleEditMode() {
     setState(() {
       _isEditing = !_isEditing;
@@ -204,6 +250,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // Reset controllers to original values from Firestore
     _nameController.text = _userData['name'] ?? widget.userName;
     _phoneController.text = _userData['phone'] ?? '';
+    _idNumberController.text = _userData['idNumber'] ?? '';
     _addressController.text = _userData['address'] ?? '';
     _locationController.text = _userData['location'] ?? '';
 
@@ -238,6 +285,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
+    _idNumberController.dispose();
     _addressController.dispose();
     _locationController.dispose();
     super.dispose();
@@ -359,6 +407,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildProfileHeader() {
+    final accountNumber = _userData['accountNumber'] ?? 'Not assigned';
+
     return Column(
       children: [
         Stack(
@@ -436,6 +486,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
             color: Colors.grey[600],
           ),
         ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.blue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            'Acc: $accountNumber',
+            style: TextStyle(
+              color: Colors.blue[700],
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -471,6 +537,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildAccountInfoSection() {
+    final accountNumber = _userData['accountNumber'] ?? 'Not assigned';
+    final meterNumber = _userData['meterNumber'] ?? widget.meterNumber;
+    final idNumber = _userData['idNumber'] ?? 'Not set';
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.blueAccent.withOpacity(0.05),
@@ -490,23 +560,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _buildInfoRow('Meter Number', widget.meterNumber),
+          _buildInfoRow('Meter Number', meterNumber),
+          const SizedBox(height: 12),
+          _buildInfoRow('Account Number', accountNumber),
+          const SizedBox(height: 12),
+          _buildInfoRow('ID Number', idNumber),
           const SizedBox(height: 12),
           _buildInfoRow('User ID', widget.userId),
           const SizedBox(height: 12),
           _buildInfoRow('Email', widget.userEmail),
-          const SizedBox(height: 12),
-          _buildInfoRow(
-              'Phone',
-              _phoneController.text.isNotEmpty
-                  ? _phoneController.text
-                  : 'Not set'),
-          const SizedBox(height: 12),
-          _buildInfoRow(
-              'Location',
-              _locationController.text.isNotEmpty
-                  ? _locationController.text
-                  : 'Not set'),
         ],
       ),
     );
@@ -533,9 +595,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             value,
             style: TextStyle(
               fontSize: 14,
-              color: value == 'Not set' ? Colors.grey[500] : Colors.black87,
-              fontStyle:
-                  value == 'Not set' ? FontStyle.italic : FontStyle.normal,
+              color: value == 'Not set' || value == 'Not assigned'
+                  ? Colors.grey[500]
+                  : Colors.black87,
+              fontStyle: value == 'Not set' || value == 'Not assigned'
+                  ? FontStyle.italic
+                  : FontStyle.normal,
             ),
           ),
         ),
@@ -593,11 +658,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _buildDivider(),
           _buildEditableField(
             icon: Icons.phone_outlined,
-            label: 'Mobile Number',
+            label: 'Mobile Number *',
             controller: _phoneController,
             hintText: 'Enter your mobile number',
             isEditable: _isEditing,
             keyboardType: TextInputType.phone,
+          ),
+          _buildDivider(),
+          _buildEditableField(
+            icon: Icons.badge_outlined,
+            label: 'ID Number *',
+            controller: _idNumberController,
+            hintText: 'Enter your identification number',
+            isEditable: _isEditing,
+            keyboardType: TextInputType.number,
           ),
           _buildDivider(),
           _buildEditableField(

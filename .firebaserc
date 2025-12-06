@@ -1,6 +1,6 @@
 {
   "projects": {
-    "default": "comradespent",
+    "default": "smartpay-9558e",
     "smartpay": "smartpay-9558e"
   },
   "targets": {},

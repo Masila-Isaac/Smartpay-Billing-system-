@@ -19,6 +19,12 @@
     "database": {
         "rules": "database.rules.json"
     },
+    "functions": [
+        {
+            "source": "microcontroller",
+            "codebase": "microcontroller"
+        }
+    ],
     "flutter": {
         "platforms": {
             "android": {

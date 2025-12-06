@@ -37,30 +37,65 @@ class _DashboardState extends State<Dashboard> {
   bool _isLoading = true;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  StreamSubscription? _dashboardDataSubscription;
   StreamSubscription? _waterUsageSubscription;
 
   @override
   void initState() {
     super.initState();
-    _setupRealTimeWaterData();
+    _setupDashboardDataListener();
+    _setupWaterDataBackup();
   }
 
-  void _setupRealTimeWaterData() {
-    print(
-        '📊 Setting up real-time water data for meter: ${widget.meterNumber}');
+  void _setupDashboardDataListener() {
+    print('📊 Setting up dashboard data listener for user: ${widget.userId}');
 
-    // Listen to waterUsage collection for real-time updates
+    _dashboardDataSubscription = _firestore
+        .collection('dashboard_data')
+        .doc(widget.userId)
+        .snapshots()
+        .listen((DocumentSnapshot snapshot) {
+      if (snapshot.exists) {
+        _updateFromDashboardData(snapshot.data() as Map<String, dynamic>);
+      } else {
+        print('⚠️ No dashboard data found, using backup sources');
+        _setupWaterDataBackup();
+      }
+    }, onError: (error) {
+      print('❌ Dashboard data stream error: $error');
+      _setupWaterDataBackup();
+    });
+  }
+
+  void _updateFromDashboardData(Map<String, dynamic> dashboardData) {
+    if (mounted) {
+      setState(() {
+        _remainingLitres =
+            (dashboardData['remainingBalance'] ?? 0.0).toDouble();
+        _waterUsed = (dashboardData['waterUsed'] ?? 0.0).toDouble();
+        _totalPurchased = (dashboardData['totalPurchased'] ?? 0.0).toDouble();
+
+        print('📈 Dashboard Data Updated (from shared location):');
+        print('   - Remaining Balance: $_remainingLitres L');
+        print('   - Water Used: $_waterUsed L');
+        print('   - Total Purchased: $_totalPurchased L');
+
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _setupWaterDataBackup() {
+    print('🔄 Setting up backup water data listener');
+
     _waterUsageSubscription = _firestore
         .collection('waterUsage')
         .doc(widget.meterNumber)
         .snapshots()
         .listen((DocumentSnapshot snapshot) {
       if (snapshot.exists) {
-        _updateWaterData(snapshot.data() as Map<String, dynamic>);
+        _updateFromWaterUsage(snapshot.data() as Map<String, dynamic>);
       } else {
-        print(
-            '⚠️ No waterUsage document found for meter: ${widget.meterNumber}');
-        // Try clients collection as fallback
         _setupClientsDataFallback();
       }
     }, onError: (error) {
@@ -69,24 +104,7 @@ class _DashboardState extends State<Dashboard> {
     });
   }
 
-  void _setupClientsDataFallback() {
-    // Fallback to clients collection
-    _firestore.collection('clients').doc(widget.meterNumber).snapshots().listen(
-        (DocumentSnapshot snapshot) {
-      if (snapshot.exists) {
-        _updateWaterDataFromClients(snapshot.data() as Map<String, dynamic>);
-      } else {
-        print(
-            '⚠️ No clients document found either for meter: ${widget.meterNumber}');
-        setState(() => _isLoading = false);
-      }
-    }, onError: (error) {
-      print('❌ Clients stream error: $error');
-      setState(() => _isLoading = false);
-    });
-  }
-
-  void _updateWaterData(Map<String, dynamic> waterData) {
+  void _updateFromWaterUsage(Map<String, dynamic> waterData) {
     if (mounted) {
       setState(() {
         _waterUsed = (waterData['waterUsed'] ?? 0.0).toDouble();
@@ -98,7 +116,7 @@ class _DashboardState extends State<Dashboard> {
                 0.0)
             .toDouble();
 
-        print('🔄 Water Data Updated from waterUsage:');
+        print('📊 Backup Water Data Updated from waterUsage:');
         print('   - Water Used: $_waterUsed L');
         print('   - Remaining Litres: $_remainingLitres L');
         print('   - Total Purchased: $_totalPurchased L');
@@ -108,7 +126,22 @@ class _DashboardState extends State<Dashboard> {
     }
   }
 
-  void _updateWaterDataFromClients(Map<String, dynamic> clientData) {
+  void _setupClientsDataFallback() {
+    _firestore.collection('clients').doc(widget.meterNumber).snapshots().listen(
+        (DocumentSnapshot snapshot) {
+      if (snapshot.exists) {
+        _updateFromClients(snapshot.data() as Map<String, dynamic>);
+      } else {
+        print('⚠️ No data found in any source');
+        setState(() => _isLoading = false);
+      }
+    }, onError: (error) {
+      print('❌ Clients stream error: $error');
+      setState(() => _isLoading = false);
+    });
+  }
+
+  void _updateFromClients(Map<String, dynamic> clientData) {
     if (mounted) {
       setState(() {
         _waterUsed = (clientData['waterUsed'] ?? 0.0).toDouble();
@@ -121,7 +154,7 @@ class _DashboardState extends State<Dashboard> {
                 0.0)
             .toDouble();
 
-        print('🔄 Water Data Updated from clients:');
+        print('📊 Fallback Data Updated from clients:');
         print('   - Water Used: $_waterUsed L');
         print('   - Remaining Litres: $_remainingLitres L');
         print('   - Total Purchased: $_totalPurchased L');
@@ -129,6 +162,16 @@ class _DashboardState extends State<Dashboard> {
         _isLoading = false;
       });
     }
+  }
+
+  double _calculateRemainingBalance() {
+    if (_remainingLitres > 0) {
+      return _remainingLitres;
+    }
+
+    final calculated =
+        (_totalPurchased - _waterUsed).clamp(0.0, double.infinity);
+    return calculated;
   }
 
   String _formatWaterVolume(double litres) {
@@ -140,8 +183,10 @@ class _DashboardState extends State<Dashboard> {
   }
 
   double _getUsagePercentage() {
-    if (_totalPurchased == 0) return 0.0;
-    return (_waterUsed / _totalPurchased).clamp(0.0, 1.0);
+    final total = _totalPurchased;
+    if (total == 0) return 0.0;
+    final used = _waterUsed;
+    return (used / total).clamp(0.0, 1.0);
   }
 
   String _getUsagePercentageText() {
@@ -151,31 +196,29 @@ class _DashboardState extends State<Dashboard> {
 
   @override
   void dispose() {
+    _dashboardDataSubscription?.cancel();
     _waterUsageSubscription?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final remainingBalance = _calculateRemainingBalance();
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
           children: [
-            // Header with 3-dot menu
             _buildHeader(context),
-
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Professional Banner with REAL data
-                    _buildProfessionalBanner(),
+                    _buildProfessionalBanner(remainingBalance),
                     const SizedBox(height: 32),
-
-                    // Main Actions
                     _buildMenuButton(
                       context,
                       "Units available for usage",
@@ -192,7 +235,6 @@ class _DashboardState extends State<Dashboard> {
                       },
                     ),
                     const SizedBox(height: 16),
-
                     _buildMenuButton(
                       context,
                       "Make Payments",
@@ -206,7 +248,6 @@ class _DashboardState extends State<Dashboard> {
                       },
                     ),
                     const SizedBox(height: 16),
-
                     _buildMenuButton(
                       context,
                       "Water Reading",
@@ -221,7 +262,6 @@ class _DashboardState extends State<Dashboard> {
                       },
                     ),
                     const SizedBox(height: 16),
-
                     _buildMenuButton(
                       context,
                       "View Statements",
@@ -244,8 +284,7 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  // Professional Banner Section with REAL data
-  Widget _buildProfessionalBanner() {
+  Widget _buildProfessionalBanner(double remainingBalance) {
     return Container(
       width: double.infinity,
       height: 240,
@@ -262,7 +301,6 @@ class _DashboardState extends State<Dashboard> {
       ),
       child: Stack(
         children: [
-          // Background image with proper overlay
           ClipRRect(
             borderRadius: BorderRadius.circular(20),
             child: ColorFiltered(
@@ -293,8 +331,6 @@ class _DashboardState extends State<Dashboard> {
               ),
             ),
           ),
-
-          // Dark overlay for better text readability
           Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
@@ -308,15 +344,12 @@ class _DashboardState extends State<Dashboard> {
               ),
             ),
           ),
-
-          // Content
           Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Header Row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -382,11 +415,9 @@ class _DashboardState extends State<Dashboard> {
                     ),
                   ],
                 ),
-
-                // Usage Statistics with REAL DATA
-                _isLoading ? _buildLoadingStats() : _buildRealStats(),
-
-                // Progress Bar Section with REAL DATA
+                _isLoading
+                    ? _buildLoadingStats()
+                    : _buildRealStats(remainingBalance),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -457,7 +488,7 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  Widget _buildRealStats() {
+  Widget _buildRealStats(double remainingBalance) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -482,7 +513,7 @@ class _DashboardState extends State<Dashboard> {
           ),
           _buildBannerStat(
             "Remaining",
-            _formatWaterVolume(_remainingLitres),
+            _formatWaterVolume(remainingBalance),
             Icons.inventory_2_outlined,
           ),
         ],
@@ -529,7 +560,6 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  // Banner Stat Widget
   Widget _buildBannerStat(String title, String value, IconData icon) {
     return Column(
       children: [
@@ -567,7 +597,6 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  // Smooth slide transition navigation
   void _navigateWithSlideTransition(BuildContext context, Widget page) {
     Navigator.push(
       context,
@@ -595,7 +624,6 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  // Header with 3-dot menu
   Widget _buildHeader(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -612,7 +640,6 @@ class _DashboardState extends State<Dashboard> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // App Logo and Name
           Row(
             children: [
               Container(
@@ -641,8 +668,6 @@ class _DashboardState extends State<Dashboard> {
               ),
             ],
           ),
-
-          // 3-dot menu
           PopupMenuButton<String>(
             icon: Container(
               padding: const EdgeInsets.all(8),
@@ -722,7 +747,6 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  // Professional Menu Button
   Widget _buildMenuButton(
     BuildContext context,
     String title,
@@ -789,7 +813,6 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  // Handle menu selection with smooth transitions
   void _handleMenuSelection(BuildContext context, String value) {
     switch (value) {
       case 'profile':
@@ -818,7 +841,6 @@ class _DashboardState extends State<Dashboard> {
     }
   }
 
-  // Logout confirmation dialog
   void _showLogoutDialog(BuildContext context) {
     showDialog(
       context: context,

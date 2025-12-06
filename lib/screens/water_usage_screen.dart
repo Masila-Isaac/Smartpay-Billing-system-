@@ -1,10 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smartpay/model/payment_model.dart';
-import 'package:smartpay/model/water_usage_model.dart';
 import 'package:smartpay/screens/paybill_screen.dart';
 
 class WaterUsageScreen extends StatefulWidget {
@@ -31,10 +29,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
   double _totalLitresPurchased = 0.0;
   double _waterUsed = 0.0;
 
-  // Firestore instances
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
-  // Stream subscriptions for real-time updates
   StreamSubscription? _clientSubscription;
   StreamSubscription? _paymentsSubscription;
 
@@ -54,7 +49,6 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
   void _setupRealTimeListeners() {
     print('🎯 Setting up real-time listeners for meter: ${widget.meterNumber}');
 
-    // Listen to client data changes in real-time (PRIMARY DATA SOURCE)
     _clientSubscription = _firestore
         .collection('clients')
         .doc(widget.meterNumber)
@@ -71,7 +65,6 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
       setState(() => _isLoading = false);
     });
 
-    // Listen to payment data changes in real-time
     _paymentsSubscription = _firestore
         .collection('payments')
         .where('meterNumber', isEqualTo: widget.meterNumber)
@@ -88,7 +81,6 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
   void _updateClientData(Map<String, dynamic> clientData) {
     if (mounted) {
       setState(() {
-        // Use consistent field names - check for both possibilities
         _remainingLitres = (clientData['remainingLitres'] ??
                 clientData['remainingUnits'] ??
                 0.0)
@@ -107,6 +99,10 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
         _isLoading = false;
       });
 
+      // Publish data to shared location for Dashboard
+      final remainingBalance = _calculateRemainingBalance();
+      _publishToDashboardData(remainingBalance);
+
       // Update animation
       if (_totalLitresPurchased > 0) {
         final remainingPercent =
@@ -118,6 +114,30 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
     }
   }
 
+  void _publishToDashboardData(double remainingBalance) {
+    try {
+      // Publish to dashboard_data collection
+      _firestore.collection('dashboard_data').doc(widget.userId).set({
+        'remainingBalance': remainingBalance,
+        'waterUsed': _waterUsed,
+        'totalPurchased': _totalLitresPurchased,
+        'meterNumber': widget.meterNumber,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // Also update users collection
+      _firestore.collection('users').doc(widget.userId).update({
+        'currentRemainingBalance': remainingBalance,
+        'currentWaterUsed': _waterUsed,
+        'lastWaterUpdate': FieldValue.serverTimestamp(),
+      });
+
+      print('📤 Published to dashboard_data: $remainingBalance litres');
+    } catch (e) {
+      print('❌ Error publishing to dashboard: $e');
+    }
+  }
+
   void _updatePaymentData(List<QueryDocumentSnapshot> paymentDocs) {
     if (mounted) {
       setState(() {
@@ -126,20 +146,13 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
             .where((payment) => payment.isSuccessful)
             .toList();
 
-        // Calculate total from payments as backup
         double paymentTotal = _paymentHistory.fold(
             0.0, (sum, payment) => sum + payment.litresPurchased);
 
         print('💰 Payment Data Updated:');
         print('   - Total Payments: ${_paymentHistory.length}');
         print('   - Total from Payments: $paymentTotal');
-        print('   - Payment Details:');
-        _paymentHistory.forEach((payment) {
-          print(
-              '     - ${payment.amount} KES → ${payment.litresPurchased} litres');
-        });
 
-        // If client data is missing or zero, use payment data as fallback
         if (_totalLitresPurchased == 0 && paymentTotal > 0) {
           _totalLitresPurchased = paymentTotal;
           print(
@@ -150,12 +163,9 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
   }
 
   double _calculateRemainingBalance() {
-    // Priority: Use client data (this is what gets updated by payments)
     if (_remainingLitres > 0) {
       return _remainingLitres;
     }
-
-    // Fallback: Calculate from total purchased and water used
     return (_totalLitresPurchased - _waterUsed).clamp(0.0, double.infinity);
   }
 
@@ -163,8 +173,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
     final remainingBalance = _calculateRemainingBalance();
     if (remainingBalance <= 0) return '0';
 
-    final averageDailyUsage =
-        _waterUsed > 0 ? _waterUsed / 30 : 10.0; // 10L default daily usage
+    final averageDailyUsage = _waterUsed > 0 ? _waterUsed / 30 : 10.0;
     final daysLeft = remainingBalance / averageDailyUsage;
     return daysLeft.floor().toString();
   }
@@ -341,10 +350,9 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
                           color: Colors.blue[50],
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Text(
-                          'Data Source: ${_remainingLitres > 0 ? 'Client Collection' : 'Calculated from Payments'}',
-                          style:
-                              const TextStyle(fontSize: 12, color: Colors.blue),
+                        child: const Text(
+                          'Data published to Dashboard in real-time',
+                          style: TextStyle(fontSize: 12, color: Colors.blue),
                         ),
                       ),
                     ],
@@ -378,10 +386,6 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
       ),
     );
   }
-
-  // Keep all your existing UI builder methods exactly the same
-  // _buildSummaryCard, _buildProgressSection, _buildUsageStats, _buildActionButtons
-  // ... (copy all these methods from your original code)
 
   Widget _buildSummaryCard(double remainingBalance, String daysLeft) {
     return Container(

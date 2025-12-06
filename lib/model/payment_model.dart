@@ -139,7 +139,7 @@ class Payment {
       status: status ?? this.status,
       transactionId: transactionId ?? this.transactionId,
       timestamp: timestamp ?? this.timestamp,
-      litresPurchased: litresPurchased ?? this.litresPurchased,
+      litresPurchased: litresPurchased ?? litresPurchased,
       processed: processed ?? this.processed,
       conversionRate: conversionRate ?? this.conversionRate,
       reference: reference ?? this.reference,
