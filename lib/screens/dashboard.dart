@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:smartpay/screens/paybill_screen.dart';
 import 'package:smartpay/screens/viewreport.dart';
 import 'package:smartpay/screens/water_Reading.dart';
@@ -31,74 +32,35 @@ class Dashboard extends StatefulWidget {
 }
 
 class _DashboardState extends State<Dashboard> {
-  double _waterUsed = 0.0;
-  double _remainingLitres = 0.0;
+  double _currentReading = 0.0;
+  double _remainingUnits = 0.0;
   double _totalPurchased = 0.0;
+  double _unitsConsumed = 0.0;
+  String _accountNumber = '';
   bool _isLoading = true;
   bool _hasValidMeterNumber = false;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  StreamSubscription? _dashboardDataSubscription;
   StreamSubscription? _waterUsageSubscription;
-  StreamSubscription? _clientsSubscription;
 
   @override
   void initState() {
     super.initState();
     print('📱 Dashboard initialized for user: ${widget.userId}');
     print('📊 Meter Number: "${widget.meterNumber}"');
-    print('👤 User Name: ${widget.userName}');
 
-    // Check if we have a valid meter number
     _hasValidMeterNumber = widget.meterNumber.isNotEmpty;
-    print('✅ Has valid meter number: $_hasValidMeterNumber');
 
-    // Initialize data immediately
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _fetchInitialData();
-    });
-
-    // Set up listeners only if we have valid data
-    _setupListeners();
-  }
-
-  void _setupListeners() {
-    print('📊 Setting up dashboard data listener for user: ${widget.userId}');
-
-    _dashboardDataSubscription = _firestore
-        .collection('dashboard_data')
-        .doc(widget.userId)
-        .snapshots()
-        .listen((DocumentSnapshot snapshot) {
-      if (snapshot.exists) {
-        _updateFromDashboardData(snapshot.data() as Map<String, dynamic>);
-      } else {
-        print('⚠️ No dashboard data found, trying other sources');
-        // Only try water data if we have a valid meter number
-        if (_hasValidMeterNumber) {
-          _setupWaterDataBackup();
-        } else {
-          print('⚠️ Skipping water data backup - no valid meter number');
-          setState(() => _isLoading = false);
-        }
-      }
-    }, onError: (error) {
-      print('❌ Dashboard data stream error: $error');
-      if (_hasValidMeterNumber) {
-        _setupWaterDataBackup();
-      } else {
-        setState(() => _isLoading = false);
-      }
-    });
-  }
-
-  void _setupWaterDataBackup() {
-    if (!_hasValidMeterNumber) {
-      print('⚠️ Cannot setup water data backup - meter number is empty');
-      return;
+    if (_hasValidMeterNumber) {
+      _setupWaterUsageListener();
+    } else {
+      print('⚠️ No valid meter number provided');
+      setState(() => _isLoading = false);
     }
+  }
 
-    print('🔄 Setting up backup water data listener');
+  void _setupWaterUsageListener() {
+    print('🎯 Setting up waterUsage listener for meter: ${widget.meterNumber}');
 
     _waterUsageSubscription = _firestore
         .collection('waterUsage')
@@ -108,163 +70,100 @@ class _DashboardState extends State<Dashboard> {
       if (snapshot.exists) {
         _updateFromWaterUsage(snapshot.data() as Map<String, dynamic>);
       } else {
-        print('⚠️ No waterUsage data found, trying clients collection');
-        _setupClientsDataFallback();
+        print(
+            '⚠️ No waterUsage document found for meter: ${widget.meterNumber}');
+        _createInitialWaterUsageDocument();
       }
     }, onError: (error) {
       print('❌ WaterUsage stream error: $error');
-      _setupClientsDataFallback();
-    });
-  }
-
-  void _setupClientsDataFallback() {
-    if (!_hasValidMeterNumber) {
-      print('⚠️ Cannot setup clients data fallback - meter number is empty');
-      setState(() => _isLoading = false);
-      return;
-    }
-
-    print('🔄 Setting up clients data fallback');
-
-    _clientsSubscription = _firestore
-        .collection('clients')
-        .doc(widget.meterNumber)
-        .snapshots()
-        .listen((DocumentSnapshot snapshot) {
-      if (snapshot.exists) {
-        _updateFromClients(snapshot.data() as Map<String, dynamic>);
-      } else {
-        print('⚠️ No data found in any source');
-        setState(() => _isLoading = false);
-      }
-    }, onError: (error) {
-      print('❌ Clients stream error: $error');
       setState(() => _isLoading = false);
     });
-  }
-
-  Future<void> _fetchInitialData() async {
-    print('🔄 Fetching initial dashboard data...');
-
-    try {
-      // Try dashboard_data first (uses userId, not meter number)
-      DocumentSnapshot dashboardSnapshot = await _firestore
-          .collection('dashboard_data')
-          .doc(widget.userId)
-          .get();
-
-      if (dashboardSnapshot.exists) {
-        print('✅ Found dashboard_data');
-        _updateFromDashboardData(
-            dashboardSnapshot.data() as Map<String, dynamic>);
-        return;
-      }
-
-      // Only try waterUsage if we have a valid meter number
-      if (_hasValidMeterNumber) {
-        DocumentSnapshot waterSnapshot = await _firestore
-            .collection('waterUsage')
-            .doc(widget.meterNumber)
-            .get();
-
-        if (waterSnapshot.exists) {
-          print('✅ Found waterUsage data');
-          _updateFromWaterUsage(waterSnapshot.data() as Map<String, dynamic>);
-          return;
-        }
-
-        // Try clients
-        DocumentSnapshot clientsSnapshot = await _firestore
-            .collection('clients')
-            .doc(widget.meterNumber)
-            .get();
-
-        if (clientsSnapshot.exists) {
-          print('✅ Found clients data');
-          _updateFromClients(clientsSnapshot.data() as Map<String, dynamic>);
-          return;
-        }
-      }
-
-      print('⚠️ No initial data found or no valid meter number');
-      setState(() => _isLoading = false);
-    } catch (e) {
-      print('❌ Error fetching initial data: $e');
-      setState(() => _isLoading = false);
-    }
-  }
-
-  void _updateFromDashboardData(Map<String, dynamic> dashboardData) {
-    if (mounted) {
-      setState(() {
-        _remainingLitres =
-            (dashboardData['remainingBalance'] ?? 0.0).toDouble();
-        _waterUsed = (dashboardData['waterUsed'] ?? 0.0).toDouble();
-        _totalPurchased = (dashboardData['totalPurchased'] ?? 0.0).toDouble();
-
-        print('📈 Dashboard Data Updated (from shared location):');
-        print('   - Remaining Balance: $_remainingLitres L');
-        print('   - Water Used: $_waterUsed L');
-        print('   - Total Purchased: $_totalPurchased L');
-
-        _isLoading = false;
-      });
-    }
   }
 
   void _updateFromWaterUsage(Map<String, dynamic> waterData) {
     if (mounted) {
       setState(() {
-        _waterUsed = (waterData['waterUsed'] ?? 0.0).toDouble();
-        _remainingLitres =
-            (waterData['remainingUnits'] ?? waterData['remainingLitres'] ?? 0.0)
-                .toDouble();
-        _totalPurchased = (waterData['totalUnitsPurchased'] ??
-                waterData['totalLitresPurchased'] ??
-                0.0)
-            .toDouble();
+        // Get values from waterUsage collection (your main source)
+        _currentReading = (waterData['currentReading'] ?? 0.0).toDouble();
+        _remainingUnits = (waterData['remainingUnits'] ?? 0.0).toDouble();
+        _totalPurchased = (waterData['totalUnitsPurchased'] ?? 0.0).toDouble();
+        _unitsConsumed = (waterData['unitsConsumed'] ?? 0.0).toDouble();
+        _accountNumber = waterData['accountNumber'] ?? '';
 
-        print('📊 Backup Water Data Updated from waterUsage:');
-        print('   - Water Used: $_waterUsed L');
-        print('   - Remaining Litres: $_remainingLitres L');
+        print('💧 Water Usage Data Updated:');
+        print('   - Current Reading: $_currentReading L');
+        print('   - Remaining Units: $_remainingUnits L');
         print('   - Total Purchased: $_totalPurchased L');
+        print('   - Units Consumed: $_unitsConsumed L');
+        print('   - Account Number: $_accountNumber');
 
         _isLoading = false;
       });
+
+      // Sync with dashboard_data for other screens that might use it
+      _syncWithDashboardData();
     }
   }
 
-  void _updateFromClients(Map<String, dynamic> clientData) {
-    if (mounted) {
-      setState(() {
-        _waterUsed = (clientData['waterUsed'] ?? 0.0).toDouble();
-        _remainingLitres = (clientData['remainingLitres'] ??
-                clientData['remainingUnits'] ??
-                0.0)
-            .toDouble();
-        _totalPurchased = (clientData['totalLitresPurchased'] ??
-                clientData['totalUnitsPurchased'] ??
-                0.0)
-            .toDouble();
+  Future<void> _createInitialWaterUsageDocument() async {
+    try {
+      // Try to get account number from clients collection
+      String accountNumber = '';
+      final clientDoc =
+          await _firestore.collection('clients').doc(widget.meterNumber).get();
 
-        print('📊 Fallback Data Updated from clients:');
-        print('   - Water Used: $_waterUsed L');
-        print('   - Remaining Litres: $_remainingLitres L');
-        print('   - Total Purchased: $_totalPurchased L');
+      if (clientDoc.exists) {
+        final clientData = clientDoc.data() as Map<String, dynamic>;
+        accountNumber = clientData['accountNumber'] ?? '';
+      }
 
-        _isLoading = false;
+      // Create initial water usage document
+      await _firestore.collection('waterUsage').doc(widget.meterNumber).set({
+        'meterNumber': widget.meterNumber,
+        'userId': widget.userId,
+        'accountNumber': accountNumber,
+        'currentReading': 0.0,
+        'previousReading': 0.0,
+        'remainingUnits': 0.0,
+        'totalUnitsPurchased': 0.0,
+        'unitsConsumed': 0.0,
+        'lastReadingDate': FieldValue.serverTimestamp(),
+        'lastUpdated': FieldValue.serverTimestamp(),
+        'status': 'active',
       });
+
+      print('✅ Created initial waterUsage document');
+
+      // Trigger listener to get the new data
+      final newDoc = await _firestore
+          .collection('waterUsage')
+          .doc(widget.meterNumber)
+          .get();
+
+      if (newDoc.exists) {
+        _updateFromWaterUsage(newDoc.data() as Map<String, dynamic>);
+      }
+    } catch (e) {
+      print('❌ Error creating water usage document: $e');
+      setState(() => _isLoading = false);
     }
   }
 
-  double _calculateRemainingBalance() {
-    if (_remainingLitres > 0) {
-      return _remainingLitres;
-    }
+  Future<void> _syncWithDashboardData() async {
+    try {
+      // Update dashboard_data for backward compatibility
+      await _firestore.collection('dashboard_data').doc(widget.userId).set({
+        'remainingBalance': _remainingUnits,
+        'waterUsed': _unitsConsumed,
+        'totalPurchased': _totalPurchased,
+        'meterNumber': widget.meterNumber,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
-    final calculated =
-        (_totalPurchased - _waterUsed).clamp(0.0, double.infinity);
-    return calculated;
+      print('📤 Synced with dashboard_data'); // guide
+    } catch (e) {
+      print('⚠️ Error syncing with dashboard_data: $e');
+    }
   }
 
   String _formatWaterVolume(double litres) {
@@ -276,10 +175,9 @@ class _DashboardState extends State<Dashboard> {
   }
 
   double _getUsagePercentage() {
-    final total = _totalPurchased;
-    if (total == 0) return 0.0;
-    final used = _waterUsed;
-    return (used / total).clamp(0.0, 1.0);
+    if (_totalPurchased == 0) return 0.0;
+    final percentage = (_unitsConsumed / _totalPurchased).clamp(0.0, 1.0);
+    return percentage;
   }
 
   String _getUsagePercentageText() {
@@ -287,72 +185,37 @@ class _DashboardState extends State<Dashboard> {
     return '${percentage.toStringAsFixed(1)}% Used';
   }
 
+  // Get first name from full name
+  String _getFirstName() {
+    if (widget.userName.isEmpty) return 'User';
+    List<String> names = widget.userName.split(' ');
+    return names[0]; // Return first name only
+  }
+
+  // Truncate long meter numbers
+  String _formatMeterNumber(String meterNumber) {
+    if (meterNumber.length <= 15) return meterNumber;
+    return '${meterNumber.substring(0, 12)}...';
+  }
+
+  // Truncate long account numbers
+  String _formatAccountNumber(String accountNumber) {
+    if (accountNumber.isEmpty) return '';
+    if (accountNumber.length <= 20) return accountNumber;
+    return '${accountNumber.substring(0, 17)}...';
+  }
+
   @override
   void dispose() {
-    _dashboardDataSubscription?.cancel();
     _waterUsageSubscription?.cancel();
-    _clientsSubscription?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading && _waterUsed == 0 && _remainingLitres == 0) {
-      // Show loading screen on first load
-      return Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blueAccent.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Image.asset(
-                  'assets/images/logo.png',
-                  height: 80,
-                  errorBuilder: (context, error, stackTrace) => const Icon(
-                      Icons.water_drop,
-                      size: 80,
-                      color: Colors.blueAccent),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'SmartPay',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.blueAccent,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'Welcome, ${widget.userName}',
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey,
-                ),
-              ),
-              const SizedBox(height: 30),
-              const CircularProgressIndicator(),
-              const SizedBox(height: 20),
-              const Text(
-                'Loading your dashboard...',
-                style: TextStyle(
-                  color: Colors.grey,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+    if (_isLoading) {
+      return _buildLoadingScreen();
     }
-
-    final remainingBalance = _calculateRemainingBalance();
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -366,7 +229,7 @@ class _DashboardState extends State<Dashboard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildProfessionalBanner(remainingBalance),
+                    _buildProfessionalBanner(),
                     const SizedBox(height: 32),
                     _buildMenuButton(
                       context,
@@ -392,7 +255,10 @@ class _DashboardState extends State<Dashboard> {
                       () {
                         _navigateWithSlideTransition(
                           context,
-                          PayBillScreen(meterNumber: widget.meterNumber),
+                          PayBillScreen(
+                            meterNumber: widget.meterNumber,
+                            userId: widget.userId,
+                          ),
                         );
                       },
                     ),
@@ -433,15 +299,71 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  Widget _buildProfessionalBanner(double remainingBalance) {
+  Widget _buildLoadingScreen() {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blueAccent.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Image.asset(
+                'assets/images/logo.png', // Changed to logo_white.png
+                height: 80,
+                errorBuilder: (context, error, stackTrace) => const Icon(
+                    Icons.water_drop,
+                    size: 80,
+                    color: Colors.blueAccent),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'SmartPay',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                color: Colors.blueAccent,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Welcome, ${_getFirstName()}',
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 30),
+            const CircularProgressIndicator(),
+            const SizedBox(height: 20),
+            const Text(
+              'Loading your dashboard...',
+              style: TextStyle(
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfessionalBanner() {
     String displayMeterNumber = widget.meterNumber;
     if (!_hasValidMeterNumber) {
       displayMeterNumber = 'Meter number not set';
+    } else {
+      displayMeterNumber = _formatMeterNumber(displayMeterNumber);
     }
 
     return Container(
       width: double.infinity,
-      height: 240,
+      height: 280, // Increased height to prevent overflow
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
@@ -504,74 +426,116 @@ class _DashboardState extends State<Dashboard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "WELCOME BACK",
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.9),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 1.0,
-                            ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "WELCOME BACK",
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.9),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 1.0,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _getFirstName(), // Show only first name
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              // Meter number with better wrapping
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(Icons.speed_outlined,
+                                      color: Colors.white.withOpacity(0.8),
+                                      size: 14),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      displayMeterNumber,
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.8),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w400,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 2,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (_accountNumber.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Row(
+                                  children: [
+                                    Text(
+                                      'Acc: ',
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.7),
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                    Flexible(
+                                      child: Text(
+                                        _formatAccountNumber(_accountNumber),
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.7),
+                                          fontSize: 10,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            widget.userName,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.5,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            displayMeterNumber,
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.8),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.blue.shade400,
-                            Colors.blue.shade600,
-                          ],
                         ),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.blue.withOpacity(0.4),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.blue.shade400,
+                                Colors.blue.shade600,
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.blue.withOpacity(0.4),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.water_drop_outlined,
-                        color: Colors.white,
-                        size: 24,
-                      ),
+                          child: const Icon(
+                            Icons.water_drop_outlined,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 16),
+                    _buildRealStats(),
                   ],
                 ),
-                _isLoading
-                    ? _buildLoadingStats()
-                    : _buildRealStats(remainingBalance),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -588,7 +552,7 @@ class _DashboardState extends State<Dashboard> {
                           ),
                         ),
                         Text(
-                          _isLoading ? "Loading..." : _getUsagePercentageText(),
+                          _getUsagePercentageText(),
                           style: TextStyle(
                             color: Colors.white.withOpacity(0.9),
                             fontSize: 11,
@@ -597,7 +561,7 @@ class _DashboardState extends State<Dashboard> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     _buildProgressBar(),
                   ],
                 ),
@@ -609,7 +573,7 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  Widget _buildLoadingStats() {
+  Widget _buildRealStats() {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -622,53 +586,36 @@ class _DashboardState extends State<Dashboard> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildBannerStat(
-            "Volume Used",
-            "Loading...",
-            Icons.water_damage_outlined,
+          Expanded(
+            child: _buildBannerStat(
+              "Used",
+              _formatWaterVolume(_unitsConsumed),
+              Icons.water_damage_outlined,
+            ),
           ),
           Container(
             height: 30,
             width: 1,
             color: Colors.white.withOpacity(0.3),
           ),
-          _buildBannerStat(
-            "Remaining",
-            "Loading...",
-            Icons.inventory_2_outlined,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRealStats(double remainingBalance) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.2),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildBannerStat(
-            "Volume Used",
-            _formatWaterVolume(_waterUsed),
-            Icons.water_damage_outlined,
+          Expanded(
+            child: _buildBannerStat(
+              "Available",
+              _formatWaterVolume(_remainingUnits),
+              Icons.inventory_2_outlined,
+            ),
           ),
           Container(
             height: 30,
             width: 1,
             color: Colors.white.withOpacity(0.3),
           ),
-          _buildBannerStat(
-            "Remaining",
-            _formatWaterVolume(remainingBalance),
-            Icons.inventory_2_outlined,
+          Expanded(
+            child: _buildBannerStat(
+              "Total",
+              _formatWaterVolume(_totalPurchased),
+              Icons.shopping_cart_outlined,
+            ),
           ),
         ],
       ),
@@ -737,6 +684,7 @@ class _DashboardState extends State<Dashboard> {
             fontSize: 14,
             fontWeight: FontWeight.w700,
           ),
+          textAlign: TextAlign.center,
         ),
         const SizedBox(height: 2),
         Text(
@@ -746,6 +694,7 @@ class _DashboardState extends State<Dashboard> {
             fontSize: 10,
             fontWeight: FontWeight.w500,
           ),
+          textAlign: TextAlign.center,
         ),
       ],
     );
@@ -803,7 +752,7 @@ class _DashboardState extends State<Dashboard> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Image.asset(
-                  'assets/images/logo.png',
+                  'assets/images/logo.png', // Changed to  logo_white.png
                   height: 32,
                   errorBuilder: (context, error, stackTrace) {
                     return const Icon(Icons.water_drop,
@@ -822,88 +771,80 @@ class _DashboardState extends State<Dashboard> {
               ),
             ],
           ),
-          if (_isLoading)
-            const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          else
-            PopupMenuButton<String>(
-              icon: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.more_vert,
-                  color: Colors.black54,
-                  size: 22,
+          PopupMenuButton<String>(
+            icon: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.more_vert,
+                color: Colors.black54,
+                size: 22,
+              ),
+            ),
+            onSelected: (value) {
+              _handleMenuSelection(context, value);
+            },
+            itemBuilder: (BuildContext context) => [
+              const PopupMenuItem<String>(
+                value: 'profile',
+                child: Row(
+                  children: [
+                    Icon(Icons.person_outline, size: 20, color: Colors.black54),
+                    SizedBox(width: 12),
+                    Text('Profile'),
+                  ],
                 ),
               ),
-              onSelected: (value) {
-                _handleMenuSelection(context, value);
-              },
-              itemBuilder: (BuildContext context) => [
-                const PopupMenuItem<String>(
-                  value: 'profile',
-                  child: Row(
-                    children: [
-                      Icon(Icons.person_outline,
-                          size: 20, color: Colors.black54),
-                      SizedBox(width: 12),
-                      Text('Profile'),
-                    ],
-                  ),
+              const PopupMenuItem<String>(
+                value: 'notifications',
+                child: Row(
+                  children: [
+                    Icon(Icons.notifications_outlined,
+                        size: 20, color: Colors.black54),
+                    SizedBox(width: 12),
+                    Text('Notifications'),
+                  ],
                 ),
-                const PopupMenuItem<String>(
-                  value: 'notifications',
-                  child: Row(
-                    children: [
-                      Icon(Icons.notifications_outlined,
-                          size: 20, color: Colors.black54),
-                      SizedBox(width: 12),
-                      Text('Notifications'),
-                    ],
-                  ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'help',
+                child: Row(
+                  children: [
+                    Icon(Icons.help_outline, size: 20, color: Colors.black54),
+                    SizedBox(width: 12),
+                    Text('Help & Support'),
+                  ],
                 ),
-                const PopupMenuItem<String>(
-                  value: 'help',
-                  child: Row(
-                    children: [
-                      Icon(Icons.help_outline, size: 20, color: Colors.black54),
-                      SizedBox(width: 12),
-                      Text('Help & Support'),
-                    ],
-                  ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'settings',
+                child: Row(
+                  children: [
+                    Icon(Icons.settings_outlined,
+                        size: 20, color: Colors.black54),
+                    SizedBox(width: 12),
+                    Text('Settings'),
+                  ],
                 ),
-                const PopupMenuItem<String>(
-                  value: 'settings',
-                  child: Row(
-                    children: [
-                      Icon(Icons.settings_outlined,
-                          size: 20, color: Colors.black54),
-                      SizedBox(width: 12),
-                      Text('Settings'),
-                    ],
-                  ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout_outlined, size: 20, color: Colors.red),
+                    SizedBox(width: 12),
+                    Text(
+                      'Logout',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ],
                 ),
-                const PopupMenuItem<String>(
-                  value: 'logout',
-                  child: Row(
-                    children: [
-                      Icon(Icons.logout_outlined, size: 20, color: Colors.red),
-                      SizedBox(width: 12),
-                      Text(
-                        'Logout',
-                        style: TextStyle(color: Colors.red),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -1006,6 +947,7 @@ class _DashboardState extends State<Dashboard> {
   void _showLogoutDialog(BuildContext context) {
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return Dialog(
           shape: RoundedRectangleBorder(
@@ -1056,9 +998,45 @@ class _DashboardState extends State<Dashboard> {
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () async {
+                          // Close dialog
                           Navigator.of(context).pop();
-                          await AuthService.logout();
-                          Navigator.pushReplacementNamed(context, '/login');
+
+                          // Show loading indicator
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (BuildContext context) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            },
+                          );
+
+                          try {
+                            // Perform logout
+                            await AuthService.logout();
+
+                            // Close loading dialog
+                            Navigator.of(context, rootNavigator: true).pop();
+
+                            // Navigate to login and clear all routes
+                            Navigator.pushNamedAndRemoveUntil(
+                              context,
+                              '/login',
+                              (route) => false,
+                            );
+                          } catch (e) {
+                            // Close loading dialog
+                            Navigator.of(context, rootNavigator: true).pop();
+
+                            // Show error
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Logout failed: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.red,

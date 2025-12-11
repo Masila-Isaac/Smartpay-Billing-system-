@@ -3,10 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import 'package:smartpay/core/validators/form_validators.dart';
 import 'package:smartpay/deep/error_handler.dart';
-import 'package:smartpay/deep/inputformatter.dart';
 import 'package:smartpay/deep/load_overlay.dart' show LoadingOverlay;
 import 'package:smartpay/deep/password_strength.dart';
-import 'package:smartpay/screens/login.dart';
+import 'package:smartpay/screens/dashboard.dart';
 import 'package:smartpay/services/firebase_Auth.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -19,16 +18,11 @@ class SignUpScreen extends StatefulWidget {
 class _SignUpScreenState extends State<SignUpScreen> {
   bool obscurePassword = true;
   bool isLoading = false;
-  bool isNavigatingToLogin = false;
-  bool _isAccountNumberAuto = true;
-  bool _isMeterNumberAuto = true;
   bool _showPasswordTips = false;
 
   final TextEditingController nameController = TextEditingController();
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController idNumberController = TextEditingController();
-  final TextEditingController meterNumberController = TextEditingController();
-  final TextEditingController accountNumberController = TextEditingController();
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
@@ -39,10 +33,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
   @override
   void initState() {
     super.initState();
-    _generateMeterNumber();
-    _generateAccountNumber();
-
-    // Listen to password changes for strength indicator
     passwordController.addListener(() {
       setState(() {});
     });
@@ -53,85 +43,30 @@ class _SignUpScreenState extends State<SignUpScreen> {
     nameController.dispose();
     phoneController.dispose();
     idNumberController.dispose();
-    meterNumberController.dispose();
-    accountNumberController.dispose();
     emailController.dispose();
     passwordController.dispose();
     super.dispose();
   }
 
-  void _generateAccountNumber() {
-    if (_isAccountNumberAuto) {
-      String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
-      String accountNumber = "ACC${timestamp.substring(timestamp.length - 8)}";
-      accountNumberController.text = accountNumber;
-    }
+  String _generateMeterNumber() {
+    String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+    String random = (DateTime.now().microsecondsSinceEpoch % 10000)
+        .toString()
+        .padLeft(4, '0');
+    return "MTR${timestamp.substring(timestamp.length - 6)}$random";
   }
 
-  void _generateMeterNumber() {
-    if (_isMeterNumberAuto) {
-      String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
-      String meterNumber = "MTR${timestamp.substring(timestamp.length - 8)}";
-      meterNumberController.text = meterNumber;
-    }
-  }
-
-  void _toggleAccountNumberAuto(bool? value) {
-    if (value != null) {
-      setState(() {
-        _isAccountNumberAuto = value;
-        if (value) {
-          _generateAccountNumber();
-        } else {
-          accountNumberController.clear();
-        }
-      });
-    }
-  }
-
-  void _toggleMeterNumberAuto(bool? value) {
-    if (value != null) {
-      setState(() {
-        _isMeterNumberAuto = value;
-        if (value) {
-          _generateMeterNumber();
-        } else {
-          meterNumberController.clear();
-        }
-      });
-    }
-  }
-
-  void _refreshMeterNumber() {
-    if (_isMeterNumberAuto) {
-      _generateMeterNumber();
-      _formKey.currentState?.validate();
-    }
-  }
-
-  void _refreshAccountNumber() {
-    if (_isAccountNumberAuto) {
-      _generateAccountNumber();
-      _formKey.currentState?.validate();
-    }
+  String _generateAccountNumber() {
+    String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+    String random = (DateTime.now().microsecondsSinceEpoch % 10000)
+        .toString()
+        .padLeft(4, '0');
+    return "ACC${timestamp.substring(timestamp.length - 6)}$random";
   }
 
   Future<void> _signUp() async {
     if (!_formKey.currentState!.validate()) {
       _showSnackBar('Please fix the errors in the form', Colors.red[400]!);
-      return;
-    }
-
-    // Additional validation for meter and account numbers
-    if (!_isMeterNumberAuto && meterNumberController.text.isEmpty) {
-      _showSnackBar(
-          'Please enter or generate a meter number', Colors.red[400]!);
-      return;
-    }
-
-    if (!_isAccountNumberAuto && accountNumberController.text.isEmpty) {
-      _showSnackBar(
-          'Please enter or generate an account number', Colors.red[400]!);
       return;
     }
 
@@ -149,46 +84,17 @@ class _SignUpScreenState extends State<SignUpScreen> {
     setState(() => isLoading = true);
 
     try {
-      // Check for existing meter number
-      final meterSnapshot = await _firestore
-          .collection('clients')
-          .where('meterNumber', isEqualTo: meterNumberController.text.trim())
-          .limit(1)
-          .get();
-
-      if (meterSnapshot.docs.isNotEmpty) {
-        _showSnackBar('Meter number already exists. Please generate a new one.',
-            Colors.red[400]!);
-        if (_isMeterNumberAuto) {
-          _generateMeterNumber();
-        }
-        setState(() => isLoading = false);
-        return;
-      }
-
-      // Check for existing account number
-      final accountSnapshot = await _firestore
-          .collection('account_details')
-          .where('accountNumber',
-              isEqualTo: accountNumberController.text.trim())
-          .limit(1)
-          .get();
-
-      if (accountSnapshot.docs.isNotEmpty) {
-        _showSnackBar(
-            'Account number already exists. Please generate a new one.',
-            Colors.red[400]!);
-        if (_isAccountNumberAuto) {
-          _generateAccountNumber();
-        }
-        setState(() => isLoading = false);
-        return;
-      }
+      final String meterNumber = _generateMeterNumber();
+      final String accountNumber = _generateAccountNumber();
+      final String phone = phoneController.text.trim();
+      final String idNumber = idNumberController.text.trim();
+      final String name = nameController.text.trim();
+      final String email = emailController.text.trim();
 
       // Check for existing email
       final emailSnapshot = await _firestore
           .collection('users')
-          .where('email', isEqualTo: emailController.text.trim())
+          .where('email', isEqualTo: email)
           .limit(1)
           .get();
 
@@ -201,19 +107,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
       // Create user with Firebase Authentication
       final user = await authService.signUpWithEmail(
-        email: emailController.text.trim(),
+        email: email,
         password: passwordController.text.trim(),
         context: context,
       );
 
       if (user != null) {
-        final String meterNumber = meterNumberController.text.trim();
-        final String accountNumber = accountNumberController.text.trim();
-        final String phone = phoneController.text.trim();
-        final String idNumber = idNumberController.text.trim();
-        final String name = nameController.text.trim();
-        final String email = emailController.text.trim();
-
         // Create user document in Firestore
         await _firestore.collection("users").doc(user.uid).set({
           "email": email,
@@ -293,7 +192,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
         });
 
         print('✅ User created successfully across all collections');
-        _showSuccessDialog(meterNumber, accountNumber);
+
+        // Navigate directly to Dashboard
+        _navigateToDashboard(
+          userId: user.uid,
+          meterNumber: meterNumber,
+          userName: name,
+          userEmail: email,
+        );
       }
     } catch (e) {
       print('❌ Sign up error: $e');
@@ -301,7 +207,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
         ErrorHandler.getFirebaseAuthError(e.toString()),
         Colors.red[400]!,
       );
-    } finally {
       if (mounted) {
         setState(() => isLoading = false);
       }
@@ -359,98 +264,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
         false;
   }
 
-  void _showSuccessDialog(String meterNumber, String accountNumber) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.green),
-              SizedBox(width: 8),
-              Text('Success'),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Account created successfully!',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 16),
-              _buildInfoItem('Meter Number:', meterNumber),
-              const SizedBox(height: 8),
-              _buildInfoItem('Account Number:', accountNumber),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.amber[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.amber.shade200),
-                ),
-                child: const Text(
-                  'Please save these numbers for future reference. You\'ll need them for login and payments.',
-                  style: TextStyle(
-                    color: Colors.amber,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                );
-              },
-              child: const Text('Continue to Login'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildInfoItem(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontWeight: FontWeight.w500,
-            color: Colors.grey[700],
-            fontSize: 14,
-          ),
+  void _navigateToDashboard({
+    required String userId,
+    required String meterNumber,
+    required String userName,
+    required String userEmail,
+  }) {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Dashboard(
+          userId: userId,
+          meterNumber: meterNumber,
+          userName: userName,
+          userEmail: userEmail,
         ),
-        const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.blue.shade50,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              color: Colors.blue,
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -473,24 +302,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  void _navigateToLogin() async {
-    setState(() => isNavigatingToLogin = true);
-
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return LoadingOverlay(
-      isLoading: isNavigatingToLogin,
-      loadingText: 'Loading...',
+      isLoading: isLoading,
+      loadingText: 'Creating account...',
       child: Scaffold(
         backgroundColor: Colors.white,
         body: Stack(
@@ -592,7 +408,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         hint: "Full Name",
                         icon: Icons.person_outline,
                         validator: FormValidators.validateName,
-                        inputFormatters: [InputFormatters.nameFormatter],
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(
+                              RegExp(r'[a-zA-Z\s]'))
+                        ],
                       ),
                       const SizedBox(height: 16),
 
@@ -603,7 +422,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         icon: Icons.phone_outlined,
                         keyboardType: TextInputType.phone,
                         validator: FormValidators.validatePhone,
-                        inputFormatters: [InputFormatters.phoneFormatter],
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly
+                        ],
                       ),
                       const SizedBox(height: 16),
 
@@ -614,31 +435,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         icon: Icons.badge_outlined,
                         keyboardType: TextInputType.number,
                         validator: FormValidators.validateIdNumber,
-                        inputFormatters: [InputFormatters.idFormatter],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Meter Number Field with Toggle
-                      _buildTextFieldWithToggle(
-                        controller: meterNumberController,
-                        hint: "Meter Number",
-                        icon: Icons.speed_outlined,
-                        isAuto: _isMeterNumberAuto,
-                        onToggle: _toggleMeterNumberAuto,
-                        onGenerate: _refreshMeterNumber,
-                        prefix: "MTR",
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Account Number Field with Toggle
-                      _buildTextFieldWithToggle(
-                        controller: accountNumberController,
-                        hint: "Account Number",
-                        icon: Icons.account_balance_outlined,
-                        isAuto: _isAccountNumberAuto,
-                        onToggle: _toggleAccountNumberAuto,
-                        onGenerate: _refreshAccountNumber,
-                        prefix: "ACC",
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly
+                        ],
                       ),
                       const SizedBox(height: 16),
 
@@ -649,7 +448,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         icon: Icons.email_outlined,
                         keyboardType: TextInputType.emailAddress,
                         validator: FormValidators.validateEmail,
-                        inputFormatters: [InputFormatters.emailFormatter],
                       ),
                       const SizedBox(height: 16),
 
@@ -673,6 +471,47 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         ],
                       ),
                       const SizedBox(height: 32),
+
+                      // Auto-generated Info Card
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.blue[100]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.info_outline,
+                                    color: Colors.blue[700], size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  "Auto-generated Information",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blue[800],
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              "• Meter number will be auto-generated\n"
+                              "• Account number will be auto-generated\n"
+                              "• You can view these in your profile",
+                              style: TextStyle(
+                                color: Colors.blue[700],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
 
                       // Terms and Conditions Checkbox
                       Row(
@@ -755,16 +594,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
                       const SizedBox(height: 32),
 
-                      // Divider
-                      _buildDivider(),
-
-                      const SizedBox(height: 32),
-
-                      // Google Sign In Button
-                      _buildGoogleButton(),
-
-                      const SizedBox(height: 40),
-
                       // Login Link
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -778,22 +607,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           ),
                           GestureDetector(
                             onTap:
-                                isNavigatingToLogin ? null : _navigateToLogin,
-                            child: isNavigatingToLogin
-                                ? const SizedBox(
-                                    height: 16,
-                                    width: 16,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  )
-                                : Text(
-                                    "Log In",
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.blue[700],
-                                      fontSize: 15,
-                                    ),
-                                  ),
+                                isLoading ? null : () => Navigator.pop(context),
+                            child: Text(
+                              "Log In",
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: Colors.blue[700],
+                                fontSize: 15,
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -866,134 +688,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildTextFieldWithToggle({
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    required bool isAuto,
-    required Function(bool?) onToggle,
-    required VoidCallback onGenerate,
-    required String prefix,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextFormField(
-                  controller: controller,
-                  enabled: !isLoading && !isAuto,
-                  inputFormatters: [InputFormatters.alphanumericFormatter],
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: isAuto ? Colors.grey[600] : Colors.black87,
-                    fontWeight: isAuto ? FontWeight.w500 : FontWeight.normal,
-                  ),
-                  validator: (value) {
-                    if (!isAuto) {
-                      return FormValidators.validateMeterAccountNumber(
-                        value,
-                        hint,
-                      );
-                    }
-                    return null;
-                  },
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
-                  decoration: InputDecoration(
-                    prefixIcon: Icon(icon, color: Colors.grey[600], size: 22),
-                    hintText: isAuto ? 'Auto-generated' : 'Enter $hint',
-                    hintStyle: TextStyle(
-                      color: isAuto ? Colors.grey[500] : Colors.grey[400],
-                    ),
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 18),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide:
-                          BorderSide(color: Colors.grey[200]!, width: 1),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide:
-                          BorderSide(color: Colors.blue[600]!, width: 2),
-                    ),
-                    errorBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: Colors.red[400]!, width: 1),
-                    ),
-                    focusedErrorBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: Colors.red[400]!, width: 2),
-                    ),
-                  ),
-                ),
-              ),
-              if (isAuto)
-                IconButton(
-                  icon: const Icon(Icons.refresh, color: Colors.blue),
-                  onPressed: onGenerate,
-                  tooltip: 'Generate new $hint',
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Checkbox(
-              value: isAuto,
-              onChanged: isLoading ? null : onToggle,
-              activeColor: Colors.blue[600],
-            ),
-            Text(
-              'Auto-generate $hint',
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 14,
-              ),
-            ),
-            const Spacer(),
-            if (isAuto)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.green[50],
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'Prefix: $prefix',
-                  style: TextStyle(
-                    color: Colors.green[700],
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
     );
   }
 
@@ -1121,73 +815,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildDivider() {
-    return Row(
-      children: [
-        Expanded(child: Divider(thickness: 1, color: Colors.grey[300])),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            "or",
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
-              fontSize: 14,
-            ),
-          ),
-        ),
-        Expanded(child: Divider(thickness: 1, color: Colors.grey[300])),
-      ],
-    );
-  }
-
-  Widget _buildGoogleButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: OutlinedButton(
-        onPressed: isLoading
-            ? null
-            : () {
-                _showSnackBar(
-                    'Google Sign-Up coming soon!', Colors.orange[400]!);
-              },
-        style: OutlinedButton.styleFrom(
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.grey[800],
-          side: BorderSide(color: Colors.grey[300]!, width: 1.5),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          elevation: 0,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(
-              'assets/images/google.png',
-              height: 24,
-              width: 24,
-              errorBuilder: (context, error, stackTrace) => const Icon(
-                Icons.g_mobiledata,
-                size: 28,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Text(
-              'Sign up with Google',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.3,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -1,3 +1,5 @@
+// auth_service.dart
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
@@ -25,10 +27,21 @@ class AuthService {
     return prefs.getString(_userEmailKey);
   }
 
-  // Logout user
+  // Logout user - UPDATED to include Firebase Auth
   static Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_isLoggedInKey);
-    await prefs.remove(_userEmailKey);
+    try {
+      // Sign out from Firebase Auth
+      await FirebaseAuth.instance.signOut();
+
+      // Clear SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_isLoggedInKey);
+      await prefs.remove(_userEmailKey);
+
+      print('✅ User logged out successfully');
+    } catch (e) {
+      print('❌ Error during logout: $e');
+      throw Exception('Logout failed: $e');
+    }
   }
 }

@@ -3,8 +3,13 @@ import 'package:smartpay/screens/paybill_screen.dart';
 
 class PaymentOptionsScreen extends StatelessWidget {
   final String meterNumber;
+  final String userId; // Add this parameter
 
-  const PaymentOptionsScreen({super.key, required this.meterNumber});
+  const PaymentOptionsScreen({
+    super.key,
+    required this.meterNumber,
+    required this.userId, // Add this
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -112,8 +117,10 @@ class PaymentOptionsScreen extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          PayBillScreen(meterNumber: meterNumber),
+                      builder: (context) => PayBillScreen(
+                        meterNumber: meterNumber,
+                        userId: userId, // Pass the userId here
+                      ),
                     ),
                   );
                 },

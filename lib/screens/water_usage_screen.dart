@@ -49,12 +49,19 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
   void _setupRealTimeListeners() {
     print('🎯 Setting up real-time listeners for meter: ${widget.meterNumber}');
 
+    // Add null check for meterNumber
+    if (widget.meterNumber.isEmpty) {
+      print('❌ Meter number is empty');
+      setState(() => _isLoading = false);
+      return;
+    }
+
     _clientSubscription = _firestore
         .collection('clients')
         .doc(widget.meterNumber)
         .snapshots()
         .listen((DocumentSnapshot snapshot) {
-      if (snapshot.exists) {
+      if (snapshot.exists && snapshot.data() != null) {
         _updateClientData(snapshot.data() as Map<String, dynamic>);
       } else {
         print('⚠️ No client document found for meter: ${widget.meterNumber}');
@@ -116,6 +123,12 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
 
   void _publishToDashboardData(double remainingBalance) {
     try {
+      // Add null check for userId
+      if (widget.userId.isEmpty) {
+        print('⚠️ User ID is empty, skipping dashboard update');
+        return;
+      }
+
       // Publish to dashboard_data collection
       _firestore.collection('dashboard_data').doc(widget.userId).set({
         'remainingBalance': remainingBalance,
@@ -193,10 +206,14 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
   }
 
   void _navigateToBuyUnits() {
+    // FIXED: Use the actual userId from widget, not empty string
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => PayBillScreen(meterNumber: widget.meterNumber),
+        builder: (context) => PayBillScreen(
+          meterNumber: widget.meterNumber,
+          userId: widget.userId, // FIX: Use widget.userId
+        ),
       ),
     );
   }

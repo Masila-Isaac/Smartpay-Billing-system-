@@ -5,8 +5,13 @@ import '../services/mpesa_service.dart';
 
 class PayBillScreen extends StatefulWidget {
   final String meterNumber;
+  final String userId; // Add this
 
-  const PayBillScreen({super.key, required this.meterNumber});
+  const PayBillScreen({
+    super.key,
+    required this.meterNumber,
+    required this.userId, // Add this
+  });
 
   @override
   State<PayBillScreen> createState() => _PayBillScreenState();
@@ -492,7 +497,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
     final amountText = amountController.text.trim();
     final amount = double.tryParse(amountText) ?? 0.0;
 
-    // Validation - REMOVED THE 10 KES MINIMUM
+    // Validation
     if (phone.isEmpty) {
       _showErrorDialog('Please enter your phone number');
       return;
@@ -543,6 +548,21 @@ class _PayBillScreenState extends State<PayBillScreen> {
         meterNumber: meterNumber,
       );
 
+      // IMPORTANT: Update water usage after successful payment
+      if (result['status'] == 'successful' || result['status'] == 'pending') {
+        try {
+          await _updateWaterUsageAfterPayment(
+            meterNumber: meterNumber,
+            userId: widget.userId, // Use the userId passed from parent
+            litresPurchased: amount, // 1 KES = 1 litre
+            amount: amount,
+          );
+        } catch (e) {
+          debugPrint('Water usage update error: $e');
+          // Don't fail the payment if water update fails, just log it
+        }
+      }
+
       setState(() {
         _paymentCompleted = true;
         _paymentReference = result['reference'] ?? 'N/A';
@@ -568,6 +588,97 @@ class _PayBillScreenState extends State<PayBillScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  Future<void> _updateWaterUsageAfterPayment({
+    required String meterNumber,
+    required String userId,
+    required double litresPurchased,
+    required double amount,
+  }) async {
+    try {
+      final _firestore = FirebaseFirestore.instance;
+
+      print('💧 Updating water usage after payment');
+      print('• User ID: $userId');
+      print('• Meter: $meterNumber');
+      print('• Litres Purchased: $litresPurchased');
+      print('• Amount: $amount');
+
+      // Get current water usage data
+      final waterUsageDoc =
+          await _firestore.collection('waterUsage').doc(meterNumber).get();
+
+      if (waterUsageDoc.exists) {
+        final currentData = waterUsageDoc.data() as Map<String, dynamic>;
+
+        // Calculate new values
+        double currentReading =
+            (currentData['currentReading'] ?? 0.0).toDouble();
+        double remainingUnits =
+            (currentData['remainingUnits'] ?? 0.0).toDouble();
+        double totalUnitsPurchased =
+            (currentData['totalUnitsPurchased'] ?? 0.0).toDouble();
+
+        // Add purchased litres
+        double newCurrentReading = currentReading + litresPurchased;
+        double newRemainingUnits = remainingUnits + litresPurchased;
+        double newTotalPurchased = totalUnitsPurchased + litresPurchased;
+
+        print('📈 Updating water usage:');
+        print('   - Old currentReading: $currentReading');
+        print('   - Old remainingUnits: $remainingUnits');
+        print('   - Old totalPurchased: $totalUnitsPurchased');
+        print('   - New currentReading: $newCurrentReading');
+        print('   - New remainingUnits: $newRemainingUnits');
+        print('   - New totalPurchased: $newTotalPurchased');
+
+        // Update waterUsage collection
+        await _firestore.collection('waterUsage').doc(meterNumber).update({
+          'currentReading': newCurrentReading,
+          'remainingUnits': newRemainingUnits,
+          'totalUnitsPurchased': newTotalPurchased,
+          'lastUpdated': FieldValue.serverTimestamp(),
+        });
+
+        // Update clients collection (for backward compatibility)
+        await _firestore.collection('clients').doc(meterNumber).update({
+          'remainingLitres': newRemainingUnits,
+          'totalLitresPurchased': newTotalPurchased,
+          'lastTopUp': FieldValue.serverTimestamp(),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        });
+
+        // Update dashboard_data for real-time dashboard updates
+        await _firestore.collection('dashboard_data').doc(userId).set({
+          'remainingBalance': newRemainingUnits,
+          'totalPurchased': newTotalPurchased,
+          'meterNumber': meterNumber,
+          'lastUpdated': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        print('✅ Water usage updated successfully');
+      } else {
+        // Create new water usage document if it doesn't exist
+        await _firestore.collection('waterUsage').doc(meterNumber).set({
+          'meterNumber': meterNumber,
+          'userId': userId,
+          'currentReading': litresPurchased,
+          'previousReading': 0.0,
+          'remainingUnits': litresPurchased,
+          'totalUnitsPurchased': litresPurchased,
+          'unitsConsumed': 0.0,
+          'lastReadingDate': FieldValue.serverTimestamp(),
+          'lastUpdated': FieldValue.serverTimestamp(),
+          'status': 'active',
+        });
+
+        print('✅ New water usage document created');
+      }
+    } catch (e) {
+      print('❌ Error updating water usage: $e');
+      throw Exception('Failed to update water usage: $e');
     }
   }
 

@@ -26,6 +26,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   late User _currentUser;
   Map<String, dynamic> _userData = {};
+  Map<String, dynamic> _accountData = {};
+  Map<String, dynamic> _usageData = {};
   bool _isLoading = true;
   bool _isEditing = false;
 
@@ -45,7 +47,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _initializeData() async {
     try {
-      await _loadUserData();
+      await _loadAllUserData();
     } catch (e) {
       print('Error initializing data: $e');
       setState(() {
@@ -54,59 +56,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _loadUserData() async {
+  Future<void> _loadAllUserData() async {
     try {
-      // Get user document from Firestore
+      // Get user document from users collection
       DocumentSnapshot userDoc =
           await _firestore.collection('users').doc(widget.userId).get();
 
       if (userDoc.exists) {
+        _userData = userDoc.data() as Map<String, dynamic>;
+
+        // Get account details
+        DocumentSnapshot accountDoc = await _firestore
+            .collection('account_details')
+            .doc(widget.userId)
+            .get();
+        if (accountDoc.exists) {
+          _accountData = accountDoc.data() as Map<String, dynamic>;
+        }
+
+        // Update controllers with Firestore data
+        _nameController.text = _userData['name'] ?? widget.userName;
+        _phoneController.text = _userData['phone'] ?? '';
+        _idNumberController.text = _userData['idNumber'] ?? '';
+        _addressController.text = _userData['address'] ?? '';
+        _locationController.text = _userData['location'] ?? '';
+
         setState(() {
-          _userData = userDoc.data() as Map<String, dynamic>;
-          // Update controllers with Firestore data
-          _nameController.text = _userData['name'] ?? widget.userName;
-          _phoneController.text = _userData['phone'] ?? '';
-          _idNumberController.text = _userData['idNumber'] ?? '';
-          _addressController.text = _userData['address'] ?? '';
-          _locationController.text = _userData['location'] ?? '';
           _isLoading = false;
         });
 
-        print('✅ User data loaded successfully from Firestore');
-      } else {
-        print('📝 Creating new user document in Firestore...');
-        await _createUserDocument();
+        print('✅ All user data loaded successfully');
       }
     } catch (e) {
       print('❌ Error loading user data: $e');
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _createUserDocument() async {
-    try {
-      final userData = {
-        'name': widget.userName,
-        'email': widget.userEmail,
-        'meterNumber': widget.meterNumber,
-        'phone': '',
-        'idNumber': '',
-        'address': '',
-        'location': '',
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      await _firestore.collection('users').doc(widget.userId).set(userData);
-
-      print('✅ New user document created');
-
-      // Reload data after creating document
-      await _loadUserData();
-    } catch (e) {
-      print('❌ Error creating user document: $e');
       setState(() {
         _isLoading = false;
       });
@@ -150,13 +132,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .doc(widget.userId)
           .update(updatedData);
 
-      print('✅ User data updated in Firestore');
+      // Update account_details collection
+      await _firestore.collection('account_details').doc(widget.userId).update({
+        ...updatedData,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
-      // Also update other collections for consistency
-      await _updateRelatedCollections(updatedData);
+      // Update clients collection
+      await _firestore.collection('clients').doc(widget.meterNumber).update({
+        'name': updatedData['name'],
+        'phone': updatedData['phone'],
+        'idNumber': updatedData['idNumber'],
+        'address': updatedData['address'],
+        'location': updatedData['location'],
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ All collections updated successfully');
 
       // Reload data to get updated information
-      await _loadUserData();
+      await _loadAllUserData();
 
       setState(() {
         _isEditing = false;
@@ -195,48 +190,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _isLoading = false;
         });
       }
-    }
-  }
-
-  Future<void> _updateRelatedCollections(
-      Map<String, dynamic> updatedData) async {
-    try {
-      // Get account details
-      final userDoc =
-          await _firestore.collection('users').doc(widget.userId).get();
-      final userData = userDoc.data() as Map<String, dynamic>;
-
-      final String accountNumber = userData['accountNumber'] ?? '';
-      final String meterNumber = userData['meterNumber'] ?? widget.meterNumber;
-
-      // Update clients collection
-      await _firestore.collection('clients').doc(meterNumber).update({
-        'name': updatedData['name'],
-        'phone': updatedData['phone'],
-        'idNumber': updatedData['idNumber'],
-        'address': updatedData['address'],
-        'location': updatedData['location'],
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // Update account_details collection
-      await _firestore.collection('account_details').doc(widget.userId).set({
-        ...updatedData,
-        'email': widget.userEmail,
-        'meterNumber': meterNumber,
-        'accountNumber': accountNumber,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      // Update waterUsage collection
-      await _firestore.collection('waterUsage').doc(meterNumber).update({
-        'phone': updatedData['phone'],
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      print('✅ Related collections updated');
-    } catch (e) {
-      print('❌ Error updating related collections: $e');
     }
   }
 
@@ -316,7 +269,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: Colors.blueAccent.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(
+                child: const Icon(
                   Icons.edit_outlined,
                   size: 20,
                   color: Colors.blueAccent,
@@ -441,30 +394,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 color: Colors.white,
               ),
             ),
-            if (_isEditing)
-              Positioned(
-                bottom: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 8,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.camera_alt,
-                    size: 16,
-                    color: Colors.blueAccent,
-                  ),
-                ),
-              ),
           ],
         ),
         const SizedBox(height: 20),
@@ -487,20 +416,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.blue.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            'Acc: $accountNumber',
-            style: TextStyle(
-              color: Colors.blue[700],
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                'Acc: $accountNumber',
+                style: TextStyle(
+                  color: Colors.blue[700],
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
-          ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                'Mtr: ${widget.meterNumber}',
+                style: TextStyle(
+                  color: Colors.green[700],
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 16),
         Container(
@@ -540,6 +490,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final accountNumber = _userData['accountNumber'] ?? 'Not assigned';
     final meterNumber = _userData['meterNumber'] ?? widget.meterNumber;
     final idNumber = _userData['idNumber'] ?? 'Not set';
+    final createdAt = _userData['createdAt'] != null
+        ? (_userData['createdAt'] as Timestamp).toDate()
+        : DateTime.now();
 
     return Container(
       decoration: BoxDecoration(
@@ -551,33 +504,86 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Account Information',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Colors.black87,
-            ),
+          const Row(
+            children: [
+              Icon(Icons.account_circle_outlined, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Account Information',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
-          _buildInfoRow('Meter Number', meterNumber),
+          _buildInfoRow('Meter Number', meterNumber, Icons.speed),
           const SizedBox(height: 12),
-          _buildInfoRow('Account Number', accountNumber),
+          _buildInfoRow('Account Number', accountNumber, Icons.account_balance),
           const SizedBox(height: 12),
-          _buildInfoRow('ID Number', idNumber),
+          _buildInfoRow('ID Number', idNumber, Icons.badge),
           const SizedBox(height: 12),
-          _buildInfoRow('User ID', widget.userId),
-          const SizedBox(height: 12),
-          _buildInfoRow('Email', widget.userEmail),
+          _buildInfoRow(
+              'Member Since',
+              '${createdAt.day}/${createdAt.month}/${createdAt.year}',
+              Icons.calendar_today),
         ],
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
+  Widget _buildUsageCard(String title, String value, IconData icon) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 16, color: Colors.teal),
+                const SizedBox(width: 4),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Colors.teal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value, IconData icon) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Container(
+          width: 30,
+          child: Icon(icon, size: 16, color: Colors.grey[600]),
+        ),
+        const SizedBox(width: 8),
         SizedBox(
           width: 120,
           child: Text(
@@ -611,10 +617,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildSectionTitle(String title) {
     return Row(
       children: [
+        const Icon(Icons.person_outline, size: 20),
+        const SizedBox(width: 8),
         Text(
           title,
           style: const TextStyle(
-            fontSize: 20,
+            fontSize: 18,
             fontWeight: FontWeight.w700,
             color: Colors.black87,
           ),
