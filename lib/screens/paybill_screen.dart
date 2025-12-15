@@ -5,12 +5,12 @@ import '../services/mpesa_service.dart';
 
 class PayBillScreen extends StatefulWidget {
   final String meterNumber;
-  final String userId; // Add this
+  final String userId;
 
   const PayBillScreen({
     super.key,
     required this.meterNumber,
-    required this.userId, // Add this
+    required this.userId,
   });
 
   @override
@@ -164,6 +164,9 @@ class _PayBillScreenState extends State<PayBillScreen> {
               ),
             ),
 
+          // Phone Number Validation Info
+          if (phoneController.text.isNotEmpty) _buildPhoneValidationInfo(),
+
           // Payment Form
           Container(
             padding: const EdgeInsets.all(20),
@@ -187,7 +190,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
                 _buildTextField(
                   label: 'Amount (KES)',
                   controller: amountController,
-                  hintText: 'e.g. 1, 10, 50, 100, 1000',
+                  hintText: 'e.g. 10, 50, 100, 500, 1000',
                   icon: Icons.attach_money_outlined,
                   keyboardType: TextInputType.number,
                 ),
@@ -195,12 +198,12 @@ class _PayBillScreenState extends State<PayBillScreen> {
                 _buildTextField(
                   label: 'Phone Number',
                   controller: phoneController,
-                  hintText: '07XXXXXXXX',
+                  hintText: '07XXXXXXXX or 254XXXXXXXXX',
                   icon: Icons.phone_android_outlined,
                   keyboardType: TextInputType.phone,
                 ),
                 const SizedBox(height: 8),
-                // Info message about any amount
+                // Info message
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
@@ -216,7 +219,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          "Any amount accepted - 1 KES = 1 litre of water",
+                          "1 KES = 1 litre of water. You will receive an M-Pesa STK Push on your phone.",
                           style: TextStyle(
                             color: Colors.blue[800],
                             fontSize: 12,
@@ -233,7 +236,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
                   height: 50,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _serverConnected
+                      backgroundColor: _serverConnected && _isPhoneValid()
                           ? const Color(0xff006ee6)
                           : Colors.grey,
                       foregroundColor: Colors.white,
@@ -242,7 +245,9 @@ class _PayBillScreenState extends State<PayBillScreen> {
                       ),
                     ),
                     onPressed:
-                        _serverConnected && !_isLoading ? _handlePayment : null,
+                        _serverConnected && !_isLoading && _isPhoneValid()
+                            ? _handlePayment
+                            : null,
                     child: _isLoading
                         ? const SizedBox(
                             width: 20,
@@ -274,6 +279,78 @@ class _PayBillScreenState extends State<PayBillScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildPhoneValidationInfo() {
+    final phone = phoneController.text.trim();
+    final isValid = MpesaService.isValidKenyanPhone(phone);
+
+    if (isValid) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: Colors.green[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.green),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green[800]),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                "Phone number is valid for M-Pesa",
+                style: TextStyle(color: Colors.green[800]),
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: Colors.orange[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange[800]),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Phone number may not be valid for M-Pesa",
+                    style: TextStyle(color: Colors.orange[800]),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "Format: 07XXXXXXXX or 2547XXXXXXXX",
+                    style: TextStyle(
+                      color: Colors.orange[800],
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  bool _isPhoneValid() {
+    final phone = phoneController.text.trim();
+    if (phone.isEmpty) return false;
+    return MpesaService.isValidKenyanPhone(phone);
   }
 
   Widget _buildSuccessScreen() {
@@ -470,6 +547,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
           controller: controller,
           enabled: enabled && !_isLoading,
           keyboardType: keyboardType,
+          onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             hintText: hintText,
             prefixIcon: Icon(icon, color: Colors.grey.shade600),
@@ -518,19 +596,45 @@ class _PayBillScreenState extends State<PayBillScreen> {
       return;
     }
 
-    // Phone number validation and formatting
-    String formattedPhone = phone;
-    if (phone.startsWith('0')) {
-      formattedPhone = '254${phone.substring(1)}';
-    } else if ((phone.startsWith('7') || phone.startsWith('1')) &&
-        phone.length == 9) {
-      formattedPhone = '254$phone';
-    }
-
-    if (!RegExp(r'^254(7|1)\d{8}$').hasMatch(formattedPhone)) {
-      _showErrorDialog('Please enter a valid Safaricom phone number');
+    if (!MpesaService.isValidKenyanPhone(phone)) {
+      _showErrorDialog(
+          'Please enter a valid Safaricom phone number (07XXXXXXXX or 2547XXXXXXXX)');
       return;
     }
+
+    // Confirm payment
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Payment'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Amount: KES $amount'),
+            Text('Phone: $phone'),
+            Text('Meter: $meterNumber'),
+            const SizedBox(height: 16),
+            const Text(
+              'You will receive an M-Pesa STK Push on your phone to complete the payment.',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
 
     setState(() => _isLoading = true);
 
@@ -543,23 +647,22 @@ class _PayBillScreenState extends State<PayBillScreen> {
       // Call M-Pesa service
       final result = await MpesaService.initiatePayment(
         userId: user.uid,
-        phone: formattedPhone,
+        phone: phone,
         amount: amount,
         meterNumber: meterNumber,
       );
 
-      // IMPORTANT: Update water usage after successful payment
-      if (result['status'] == 'successful' || result['status'] == 'pending') {
+      // Update water usage after successful payment
+      if (result['status'] == 'pending' || result['status'] == 'successful') {
         try {
           await _updateWaterUsageAfterPayment(
             meterNumber: meterNumber,
-            userId: widget.userId, // Use the userId passed from parent
-            litresPurchased: amount, // 1 KES = 1 litre
+            userId: widget.userId,
+            litresPurchased: amount,
             amount: amount,
           );
         } catch (e) {
           debugPrint('Water usage update error: $e');
-          // Don't fail the payment if water update fails, just log it
         }
       }
 
@@ -573,8 +676,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content:
-                Text(result['message'] ?? 'Payment initiated successfully'),
+            content: Text(result['message'] ?? 'STK Push sent to your phone'),
             backgroundColor: Colors.green,
           ),
         );
@@ -642,7 +744,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
           'lastUpdated': FieldValue.serverTimestamp(),
         });
 
-        // Update clients collection (for backward compatibility)
+        // Update clients collection
         await _firestore.collection('clients').doc(meterNumber).update({
           'remainingLitres': newRemainingUnits,
           'totalLitresPurchased': newTotalPurchased,
@@ -650,7 +752,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
           'lastUpdated': FieldValue.serverTimestamp(),
         });
 
-        // Update dashboard_data for real-time dashboard updates
+        // Update dashboard_data
         await _firestore.collection('dashboard_data').doc(userId).set({
           'remainingBalance': newRemainingUnits,
           'totalPurchased': newTotalPurchased,
@@ -660,7 +762,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
 
         print('✅ Water usage updated successfully');
       } else {
-        // Create new water usage document if it doesn't exist
+        // Create new water usage document
         await _firestore.collection('waterUsage').doc(meterNumber).set({
           'meterNumber': meterNumber,
           'userId': userId,

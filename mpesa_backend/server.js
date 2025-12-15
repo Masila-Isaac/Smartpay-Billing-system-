@@ -1,505 +1,656 @@
-// index.js
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const admin = require("firebase-admin");
-// Initialize Firebase Admin with environment variables
-admin.initializeApp({
-    credential: admin.credential.cert({
-        "type": "service_account",
-        "project_id": process.env.FIREBASE_PROJECT_ID,
-        "private_key_id": "2e88390fb632498fa9a424032ca06523b6cbee9f",
-        "private_key": process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-        "client_email": process.env.FIREBASE_CLIENT_EMAIL,
-        "client_id": "108924131740519602422",
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token",
-        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-        "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40smartpay-9558e.iam.gserviceaccount.com"
-    }),
-});
+
+// Initialize Firebase Admin
+const serviceAccount = {
+    type: "service_account",
+    project_id: process.env.FIREBASE_PROJECT_ID,
+    private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+    private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    client_email: process.env.FIREBASE_CLIENT_EMAIL,
+    client_id: process.env.FIREBASE_CLIENT_ID,
+    auth_uri: "https://accounts.google.com/o/oauth2/auth",
+    token_uri: "https://oauth2.googleapis.com/token",
+    auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+    client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL
+};
+
+try {
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+    });
+    console.log("✅ Firebase Admin initialized successfully");
+} catch (error) {
+    console.error("❌ Firebase Admin initialization error:", error.message);
+    // Fallback: Try to initialize without service account if in development
+    if (process.env.NODE_ENV === "development") {
+        admin.initializeApp({
+            credential: admin.credential.applicationDefault()
+        });
+        console.log("✅ Firebase Admin initialized with default credentials");
+    }
+}
 
 const db = admin.firestore();
 const app = express();
 
-// Middleware
-app.use(cors({ origin: "*" }));
+// ========== MIDDLEWARE ==========
+app.use(cors({
+    origin: "*", // Allow all origins in development
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"]
+}));
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
-// Logging middleware
-app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-    console.log("Body:", req.body);
-    next();
-});
-
-/**
- * Environment variables expected (create a .env file - see .env.example)
- * MPESA_CONSUMER_KEY
- * MPESA_CONSUMER_SECRET
- * MPESA_SHORTCODE
- * MPESA_PASSKEY
- * CALLBACK_URL  -> PUBLIC URL that Safaricom can call (ngrok/real domain)
- */
-
-// Config (from env)
+// ========== M-PESA CONFIGURATION ==========
 const consumerKey = process.env.MPESA_CONSUMER_KEY;
 const consumerSecret = process.env.MPESA_CONSUMER_SECRET;
-const shortcode = process.env.MPESA_SHORTCODE;
+const shortcode = process.env.MPESA_SHORTCODE || "174379"; // Sandbox default
 const passkey = process.env.MPESA_PASSKEY;
-const callbackUrl = process.env.CALLBACK_URL; // must be public
 
-// Water Billing Config - 1 KES = 1 litre (NO LIMITS)
-const WATER_RATES = {
-    ratePerUnit: 1,      // 1 KES per unit
-    unitSize: 1,         // 1 unit = 1 litre
-    currency: "KES"
-};
+// ⚠️ CRITICAL FIX: Use your Render URL for callback
+// Get the Render URL from environment or use the one from .env
+const renderUrl = process.env.RENDER_EXTERNAL_URL || `https://smartpay-billing.onrender.com`;
+const callbackUrl = `${renderUrl}/mpesa/callback`;
+
+console.log("📡 Server Configuration:");
+console.log("   Consumer Key:", consumerKey ? "✅ Set" : "❌ Missing");
+console.log("   Shortcode:", shortcode);
+console.log("   Render URL:", renderUrl);
+console.log("   Callback URL:", callbackUrl);
+
+// ========== HELPER FUNCTIONS ==========
 
 // Generate access token
 async function getAccessToken() {
-    const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
-    const response = await axios.get(
-        "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
-        { headers: { Authorization: `Basic ${auth}` }, timeout: 10000 }
-    );
-    return response.data.access_token;
+    try {
+        const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
+        const url = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials";
+
+        console.log('🔑 Getting M-Pesa access token...');
+
+        const response = await axios.get(url, {
+            headers: {
+                Authorization: `Basic ${auth}`,
+                "Cache-Control": "no-cache"
+            },
+            timeout: 15000
+        });
+
+        console.log('✅ Access token received');
+        return response.data.access_token;
+    } catch (error) {
+        console.error('❌ Error getting access token:', error.message);
+        if (error.response) {
+            console.error('Response Status:', error.response.status);
+            console.error('Response Data:', error.response.data);
+        }
+        throw new Error(`Failed to get M-Pesa token: ${error.message}`);
+    }
 }
 
-// Convert payment to water litres & update client - ANY AMOUNT ACCEPTED
-async function processPaymentToWaterLitres({ amount, meterNumber, phone, transactionId, userId }) {
-    // Simple calculation: amount KES = amount litres (1:1 ratio) - ANY AMOUNT
-    const litresPurchased = parseFloat(amount);
+// Format phone number for M-Pesa
+function formatPhoneNumber(phone) {
+    if (!phone) return "";
 
-    console.log(`💧 Payment conversion: ${amount} KES = ${litresPurchased} litres`);
+    // Remove all non-digits
+    const cleaned = phone.toString().replace(/\D/g, '');
 
-    // Update payment doc(s) with CORRECT field name
-    const paymentQuery = await db.collection("payments").where("transactionId", "==", transactionId).get();
+    if (!cleaned) return "";
 
-    if (!paymentQuery.empty) {
-        paymentQuery.forEach(async doc => {
-            await doc.ref.update({
-                litresPurchased: litresPurchased, // CORRECT FIELD NAME
+    // If starts with 0, convert to 254
+    if (cleaned.startsWith('0')) {
+        return '254' + cleaned.substring(1);
+    }
+
+    // If starts with 7 and length is 9, add 254
+    if (cleaned.startsWith('7') && cleaned.length === 9) {
+        return '254' + cleaned;
+    }
+
+    // If starts with 254, return as-is
+    if (cleaned.startsWith('254')) {
+        return cleaned;
+    }
+
+    // If it's already 12 digits (254xxxxxxxxx), return as-is
+    if (cleaned.length === 12) {
+        return cleaned;
+    }
+
+    console.warn(`⚠️ Could not properly format phone: ${phone}`);
+    return cleaned;
+}
+
+// Generate M-Pesa timestamp and password
+function generateTimestampAndPassword() {
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+
+    const timestamp = `${year}${month}${day}${hours}${minutes}${seconds}`;
+    const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');
+
+    return { timestamp, password };
+}
+
+// Update water usage after successful payment
+async function updateWaterAfterPayment(paymentData) {
+    try {
+        const { amount, meterNumber, phone, transactionId, userId } = paymentData;
+        const litresPurchased = parseFloat(amount);
+
+        console.log(`💧 Updating water for meter ${meterNumber}: ${litresPurchased} litres`);
+
+        // 1. Update payment document
+        const paymentQuery = await db.collection("payments")
+            .where("transactionId", "==", transactionId)
+            .get();
+
+        if (!paymentQuery.empty) {
+            const paymentDoc = paymentQuery.docs[0];
+            await paymentDoc.ref.update({
+                litresPurchased: litresPurchased,
                 processed: true,
-                conversionRate: WATER_RATES.ratePerUnit,
-                unitSize: WATER_RATES.unitSize,
-                processedAt: admin.firestore.FieldValue.serverTimestamp()
+                conversionRate: 1,
+                processedAt: admin.firestore.FieldValue.serverTimestamp(),
+                status: "Completed"
             });
-            console.log(`✅ Updated payment record: ${litresPurchased} litres for ${meterNumber}`);
-        });
-    } else {
-        console.warn(`❌ No payment record found for transaction: ${transactionId}`);
-    }
+            console.log(`✅ Updated payment: ${paymentDoc.id}`);
+        }
 
-    // Update clients collection
-    const clientRef = db.collection("clients").doc(meterNumber);
-    const clientDoc = await clientRef.get();
+        // 2. Update clients collection
+        const clientRef = db.collection("clients").doc(meterNumber);
+        const clientDoc = await clientRef.get();
 
-    if (clientDoc.exists) {
-        const currentData = clientDoc.data();
-        const updatedLitres = (currentData.remainingLitres || 0) + litresPurchased;
-
-        await clientRef.update({
-            remainingLitres: updatedLitres,
-            totalLitresPurchased: admin.firestore.FieldValue.increment(litresPurchased),
-            lastTopUp: admin.firestore.FieldValue.serverTimestamp(),
-            status: updatedLitres > 0 ? "active" : "depleted",
-            lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
-            phone: phone // Update phone if not exists
-        });
-        console.log(`✅ Updated client ${meterNumber}: +${litresPurchased}L, Total: ${updatedLitres}L`);
-    } else {
-        // Create new client with CORRECT field names
-        await clientRef.set({
-            userId: userId || "unknown",
-            meterNumber: meterNumber,
+        const updateData = {
             phone: phone,
-            waterUsed: 0,
-            remainingLitres: litresPurchased, // CORRECT FIELD NAME
-            totalLitresPurchased: litresPurchased, // CORRECT FIELD NAME
             lastTopUp: admin.firestore.FieldValue.serverTimestamp(),
-            lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
-            status: "active",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-        console.log(`✅ Created new client ${meterNumber}: ${litresPurchased}L`);
+            lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        if (clientDoc.exists) {
+            const currentData = clientDoc.data();
+            const currentLitres = parseFloat(currentData.remainingLitres) || 0;
+            const totalPurchased = parseFloat(currentData.totalLitresPurchased) || 0;
+
+            updateData.remainingLitres = currentLitres + litresPurchased;
+            updateData.totalLitresPurchased = totalPurchased + litresPurchased;
+            updateData.status = (currentLitres + litresPurchased) > 0 ? "active" : "depleted";
+
+            await clientRef.update(updateData);
+            console.log(`✅ Updated existing client: +${litresPurchased}L`);
+        } else {
+            updateData.meterNumber = meterNumber;
+            updateData.userId = userId || "unknown";
+            updateData.remainingLitres = litresPurchased;
+            updateData.totalLitresPurchased = litresPurchased;
+            updateData.status = "active";
+            updateData.createdAt = admin.firestore.FieldValue.serverTimestamp();
+
+            await clientRef.set(updateData);
+            console.log(`✅ Created new client record`);
+        }
+
+        // 3. Update waterUsage collection (optional but good to have)
+        const waterRef = db.collection("waterUsage").doc(meterNumber);
+        const waterDoc = await waterRef.get();
+
+        const waterData = {
+            meterNumber: meterNumber,
+            userId: userId || "unknown",
+            lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        if (waterDoc.exists) {
+            const currentWater = waterDoc.data();
+            const currentReading = parseFloat(currentWater.currentReading) || 0;
+            const remainingUnits = parseFloat(currentWater.remainingUnits) || 0;
+            const totalPurchased = parseFloat(currentWater.totalUnitsPurchased) || 0;
+
+            waterData.currentReading = currentReading + litresPurchased;
+            waterData.remainingUnits = remainingUnits + litresPurchased;
+            waterData.totalUnitsPurchased = totalPurchased + litresPurchased;
+
+            await waterRef.update(waterData);
+        } else {
+            waterData.currentReading = litresPurchased;
+            waterData.previousReading = 0;
+            waterData.remainingUnits = litresPurchased;
+            waterData.totalUnitsPurchased = litresPurchased;
+            waterData.unitsConsumed = 0;
+            waterData.status = "active";
+            waterData.lastReadingDate = admin.firestore.FieldValue.serverTimestamp();
+
+            await waterRef.set(waterData);
+        }
+
+        return { success: true, litres: litresPurchased };
+    } catch (error) {
+        console.error('❌ Error updating water:', error);
+        throw error;
     }
-
-    return litresPurchased;
-}
-
-// Update water consumption
-async function updateWaterConsumption(meterNumber, waterUsed) {
-    const clientRef = db.collection("clients").doc(meterNumber);
-    const clientDoc = await clientRef.get();
-    if (!clientDoc.exists) throw new Error(`Client ${meterNumber} not found`);
-
-    const currentData = clientDoc.data();
-    const newRemaining = (currentData.remainingLitres || 0) - waterUsed; // UPDATED FIELD NAME
-    let status = 'active';
-
-    if (newRemaining <= 0) {
-        status = 'depleted';
-        await triggerWaterShutoff(meterNumber);
-    } else if (newRemaining <= 10) { // Low balance warning at 10 litres
-        status = 'warning';
-        await triggerLowBalanceAlert(meterNumber, newRemaining);
-    }
-
-    await clientRef.update({
-        waterUsed: admin.firestore.FieldValue.increment(waterUsed),
-        remainingLitres: newRemaining, // UPDATED FIELD NAME
-        status,
-        lastConsumption: waterUsed,
-        lastUpdated: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    return { meterNumber, remainingLitres: newRemaining, status }; // UPDATED FIELD NAME
-}
-
-// Alerts
-async function triggerWaterShutoff(meterNumber) {
-    await db.collection("alerts").add({
-        meterNumber,
-        type: 'water_shutoff',
-        message: 'Water litres depleted - flow stopped',
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        resolved: false,
-        priority: 'high'
-    });
-}
-
-async function triggerLowBalanceAlert(meterNumber, remainingLitres) { // UPDATED FIELD NAME
-    await db.collection("alerts").add({
-        meterNumber,
-        type: 'low_balance',
-        message: `Low water balance: ${remainingLitres} litres remaining`,
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        resolved: false,
-        priority: 'medium'
-    });
 }
 
 // ========== ROUTES ==========
 
-// Root endpoint - API info
+// Root endpoint - health check
 app.get("/", (req, res) => {
     res.json({
         success: true,
-        message: "Water Billing API Server is running",
+        message: "🚀 SmartPay Water Billing API",
+        version: "2.0.0",
+        environment: process.env.NODE_ENV || "development",
         timestamp: new Date().toISOString(),
-        waterRates: WATER_RATES,
-        note: "ANY amount accepted - 1 KES = 1 litre",
         endpoints: {
+            health: "/health",
             test: "/test",
-            stkPush: "/mpesa/stkpush",
-            callback: "/mpesa/callback",
-            waterStatus: "/api/water-status/:meterNumber",
-            paymentHistory: "/api/payment-history/:meterNumber",
-            waterUsage: "/api/water-usage"
+            stkPush: "POST /mpesa/stkpush",
+            callback: "POST /mpesa/callback",
+            paymentStatus: "GET /api/payment/:transactionId"
+        },
+        config: {
+            waterRate: "1 KES = 1 litre",
+            callbackUrl: callbackUrl,
+            mpesaEnvironment: "sandbox"
         }
+    });
+});
+
+// Health check
+app.get("/health", (req, res) => {
+    res.json({
+        status: "healthy",
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        database: "Firestore",
+        mpesa: consumerKey ? "configured" : "not configured"
     });
 });
 
 // Test endpoint
-app.get("/test", (req, res) => {
-    res.json({
-        success: true,
-        message: "Water Billing Server running",
-        waterRates: WATER_RATES,
-        conversion: "1 KES = 1 litre of water - ANY AMOUNT ACCEPTED",
-        examples: {
-            "1 KES": "1 litre",
-            "10 KES": "10 litres",
-            "50 KES": "50 litres",
-            "100 KES": "100 litres",
-            "1000 KES": "1000 litres"
-        },
-        serverTime: new Date().toISOString()
-    });
+app.get("/test", async (req, res) => {
+    try {
+        // Test database connection
+        const testDoc = await db.collection("test").doc("connection").get();
+
+        // Test M-Pesa connection
+        let mpesaStatus = "not tested";
+        try {
+            const token = await getAccessToken();
+            mpesaStatus = token ? "connected" : "failed";
+        } catch (error) {
+            mpesaStatus = "error: " + error.message;
+        }
+
+        res.json({
+            success: true,
+            message: "SmartPay API is operational",
+            serverTime: new Date().toISOString(),
+            environment: process.env.NODE_ENV || "development",
+            tests: {
+                database: testDoc.exists ? "connected" : "collection not found",
+                mpesa: mpesaStatus,
+                callbackUrl: callbackUrl
+            },
+            sandboxInfo: {
+                testPhone: "254708374149",
+                testPin: "1234",
+                shortcode: "174379"
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
 });
 
-// STK Push endpoint - NO AMOUNT RESTRICTIONS
+// STK Push endpoint
 app.post("/mpesa/stkpush", async (req, res) => {
     try {
         const { phoneNumber, amount, meterNumber, userId } = req.body;
 
-        // Basic validation only - no amount restrictions
-        if (!phoneNumber || !amount || !meterNumber) {
+        console.log('📱 Received STK Push Request:');
+        console.log('   Phone:', phoneNumber);
+        console.log('   Amount:', amount, 'KES');
+        console.log('   Meter:', meterNumber);
+        console.log('   User ID:', userId);
+
+        // Validation
+        if (!phoneNumber || !phoneNumber.trim()) {
             return res.status(400).json({
                 success: false,
-                error: "Missing fields: phoneNumber, amount, meterNumber are required"
+                error: "Phone number is required"
             });
         }
 
-        // Convert amount to number (accept any positive amount)
+        if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: "Valid amount greater than 0 KES is required"
+            });
+        }
+
+        if (!meterNumber || !meterNumber.trim()) {
+            return res.status(400).json({
+                success: false,
+                error: "Meter number is required"
+            });
+        }
+
         const paymentAmount = parseFloat(amount);
+        const formattedPhone = formatPhoneNumber(phoneNumber);
 
-        // Only check if amount is positive
-        if (paymentAmount <= 0) {
-            return res.status(400).json({
-                success: false,
-                error: "Amount must be greater than 0 KES"
-            });
-        }
+        console.log(`📞 Formatted phone: ${formattedPhone} (original: ${phoneNumber})`);
 
+        // Get M-Pesa access token
         const token = await getAccessToken();
-        const timestamp = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 14);
-        const password = Buffer.from(shortcode + passkey + timestamp).toString("base64");
 
+        // Generate timestamp and password
+        const { timestamp, password } = generateTimestampAndPassword();
+
+        // Prepare STK push payload
         const payload = {
             BusinessShortCode: shortcode,
             Password: password,
             Timestamp: timestamp,
             TransactionType: "CustomerPayBillOnline",
-            Amount: Math.round(paymentAmount), // Round to nearest whole number for MPesa
-            PartyA: phoneNumber,
+            Amount: Math.floor(paymentAmount), // M-Pesa requires whole numbers
+            PartyA: formattedPhone,
             PartyB: shortcode,
-            PhoneNumber: phoneNumber,
-            CallBackURL: callbackUrl,
-            AccountReference: meterNumber.substring(0, 12),
-            TransactionDesc: "Water Bill Payment",
+            PhoneNumber: formattedPhone,
+            CallBackURL: callbackUrl, // ⚠️ This must be your Render URL
+            AccountReference: meterNumber.substring(0, 12), // Max 12 chars
+            TransactionDesc: `Water payment - ${meterNumber}`
         };
 
-        console.log('📱 STK Push Payload:', payload);
-        console.log(`💧 Expected water purchase: ${paymentAmount} KES = ${paymentAmount} litres`);
+        console.log('📤 Sending to M-Pesa Sandbox:');
+        console.log('   Amount:', payload.Amount);
+        console.log('   Phone:', payload.PhoneNumber);
+        console.log('   Callback:', payload.CallBackURL);
 
+        // Send request to M-Pesa
         const response = await axios.post(
             "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
             payload,
             {
                 headers: {
                     Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
+                    "Cache-Control": "no-cache"
                 },
-                timeout: 15000
+                timeout: 30000 // 30 seconds timeout
             }
         );
 
-        console.log('📡 M-Pesa Response:', response.data);
+        console.log('📥 M-Pesa Response:', response.data);
 
         if (response.data.ResponseCode === "0") {
-            // Create payment record with CORRECT field names
-            await db.collection("payments").add({
+            // Payment initiated successfully
+            const merchantRequestId = response.data.MerchantRequestID;
+            const checkoutRequestId = response.data.CheckoutRequestID;
+            const customerMessage = response.data.CustomerMessage;
+
+            console.log(`✅ STK Push sent! Request ID: ${merchantRequestId}`);
+            console.log(`📱 Customer message: ${customerMessage}`);
+
+            // Save payment to Firestore
+            const paymentData = {
                 userId: userId || "unknown",
-                phone: phoneNumber,
+                phone: formattedPhone,
                 amount: paymentAmount,
                 meterNumber: meterNumber,
                 status: "Pending",
-                transactionId: response.data.CheckoutRequestID,
+                transactionId: checkoutRequestId,
+                merchantRequestId: merchantRequestId,
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                litresPurchased: 0, // CORRECT FIELD NAME - initialized to 0
+                litresPurchased: 0, // Will be updated after callback
                 processed: false,
-                expectedLitres: paymentAmount // Store expected litres for reference
-            });
+                expectedLitres: paymentAmount, // 1 KES = 1 litre
+                environment: "sandbox",
+                createdAt: new Date().toISOString()
+            };
 
-            console.log(`📝 Created payment record for transaction: ${response.data.CheckoutRequestID}`);
+            await db.collection("payments").add(paymentData);
+            console.log(`💾 Payment saved to Firestore`);
 
+            // Return success response
             return res.json({
                 success: true,
-                ...response.data,
-                expectedLitres: paymentAmount,
-                message: `${paymentAmount} KES will purchase ${paymentAmount} litres of water`
+                message: customerMessage || "STK Push sent successfully",
+                MerchantRequestID: merchantRequestId,
+                CheckoutRequestID: checkoutRequestId,
+                ResponseCode: response.data.ResponseCode,
+                CustomerMessage: customerMessage,
+                reference: merchantRequestId,
+                note: "Check your phone for payment prompt. Sandbox PIN: 1234"
             });
         } else {
+            // M-Pesa returned an error
+            const errorMsg = response.data.ResponseDescription || "STK Push failed";
+            console.log('❌ M-Pesa error:', errorMsg);
+
             return res.status(400).json({
                 success: false,
-                error: response.data.ResponseDescription
+                error: errorMsg,
+                ResponseCode: response.data.ResponseCode,
+                note: "For sandbox testing, use phone: 254708374149"
             });
         }
     } catch (error) {
-        console.error("STK Push Error:", error.response?.data || error.message);
-        return res.status(500).json({
+        console.error("❌ STK Push Error:", error.message);
+
+        let errorMessage = "Failed to initiate payment";
+        let statusCode = 500;
+
+        if (error.response) {
+            console.error("Response status:", error.response.status);
+            console.error("Response data:", error.response.data);
+
+            errorMessage = error.response.data.errorMessage ||
+                error.response.data.error ||
+                error.response.data.ResponseDescription ||
+                error.message;
+            statusCode = error.response.status;
+        } else if (error.code === 'ECONNABORTED') {
+            errorMessage = "Request timeout. M-Pesa service might be slow.";
+        }
+
+        return res.status(statusCode).json({
             success: false,
-            error: "STK Push failed: " + (error.response?.data?.errorMessage || error.message)
+            error: errorMessage,
+            debug: process.env.NODE_ENV === "development" ? error.message : undefined
         });
     }
 });
 
-// Callback endpoint (Safaricom will POST here) - FIXED WITH BETTER DEBUGGING
+// M-Pesa Callback endpoint (CRITICAL - This is where M-Pesa sends payment results)
 app.post("/mpesa/callback", async (req, res) => {
+    console.log('📞 ========== M-PESA CALLBACK RECEIVED ==========');
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('Callback body:', JSON.stringify(req.body, null, 2));
+
     try {
-        console.log('📞 Callback received:', JSON.stringify(req.body, null, 2));
+        const stkCallback = req.body.Body?.stkCallback;
 
-        // Safaricom sandbox wraps the stkCallback inside Body
-        const callbackData = req.body.Body?.stkCallback;
-        if (!callbackData) {
-            console.warn("❌ Callback missing stkCallback payload:", req.body);
-            return res.status(400).json({ ResultCode: 1, ResultDesc: "Missing callback data" });
-        }
-
-        const transactionId = callbackData.CheckoutRequestID;
-        const resultCode = callbackData.ResultCode;
-        const status = resultCode === 0 ? "Success" : "Failed";
-
-        console.log(`🔄 Processing callback for transaction: ${transactionId}, Status: ${status}, ResultCode: ${resultCode}`);
-
-        // Log callback details for debugging
-        if (callbackData.CallbackMetadata && callbackData.CallbackMetadata.Item) {
-            console.log('📋 Callback metadata:', callbackData.CallbackMetadata.Item);
-        }
-
-        // Find payment record
-        const querySnapshot = await db.collection("payments").where("transactionId", "==", transactionId).get();
-
-        if (!querySnapshot.empty) {
-            console.log(`✅ Found ${querySnapshot.size} payment record(s) for transaction: ${transactionId}`);
-
-            querySnapshot.forEach(async doc => {
-                const paymentData = doc.data();
-                console.log(`📄 Processing payment: ${doc.id}`, paymentData);
-
-                // Update payment status
-                await doc.ref.update({
-                    status: status,
-                    callbackReceived: admin.firestore.FieldValue.serverTimestamp(),
-                    resultCode: resultCode,
-                    callbackData: callbackData // Store full callback for debugging
-                });
-
-                if (status === "Success") {
-                    console.log(`💰 Payment successful, processing water allocation...`);
-
-                    try {
-                        const litresPurchased = await processPaymentToWaterLitres({
-                            amount: paymentData.amount,
-                            meterNumber: paymentData.meterNumber,
-                            phone: paymentData.phone,
-                            transactionId: transactionId,
-                            userId: paymentData.userId
-                        });
-
-                        console.log(`✅ Payment processing completed: ${paymentData.amount} KES → ${litresPurchased} litres for ${paymentData.meterNumber}`);
-                    } catch (processingError) {
-                        console.error(`❌ Error processing payment:`, processingError);
-                    }
-                } else {
-                    console.log(`❌ Payment failed for transaction: ${transactionId}, Reason: ${callbackData.ResultDesc}`);
-                }
-            });
-        } else {
-            console.warn(`❌ No payment record found for transactionId: ${transactionId}`);
-            // Create a failed payment record for tracking
-            await db.collection("failed_callbacks").add({
-                transactionId: transactionId,
-                callbackData: req.body,
-                timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                reason: "No matching payment record found"
+        if (!stkCallback) {
+            console.warn("❌ Invalid callback format - missing stkCallback");
+            // Still respond success to avoid M-Pesa retries
+            return res.json({
+                ResultCode: 0,
+                ResultDesc: "Success - Invalid format handled"
             });
         }
 
-        // Always reply to Safaricom immediately
-        console.log(`📤 Replying to Safaricom with ResultCode: 0`);
-        res.json({ ResultCode: 0, ResultDesc: "Success" });
+        const checkoutRequestId = stkCallback.CheckoutRequestID;
+        const resultCode = parseInt(stkCallback.ResultCode);
+        const resultDesc = stkCallback.ResultDesc;
 
-    } catch (error) {
-        console.error("❌ Callback Processing Error:", error);
-        res.status(500).json({ ResultCode: 1, ResultDesc: "Failed" });
-    }
-});
+        console.log(`🔄 Processing callback for: ${checkoutRequestId}`);
+        console.log(`Result Code: ${resultCode} (${resultCode === 0 ? 'Success' : 'Failed'})`);
+        console.log(`Result Description: ${resultDesc}`);
 
-// Microcontroller water usage
-app.post("/api/water-usage", async (req, res) => {
-    try {
-        const { meterNumber, waterUsed } = req.body;
-        if (!meterNumber || waterUsed === undefined) {
-            return res.status(400).json({
-                success: false,
-                error: "Missing fields: meterNumber and waterUsed are required"
-            });
+        if (!checkoutRequestId) {
+            console.warn("⚠️ No CheckoutRequestID in callback");
+            return res.json({ ResultCode: 0, ResultDesc: "Success" });
         }
 
-        const result = await updateWaterConsumption(meterNumber, parseFloat(waterUsed));
-        res.json({
-            success: true,
-            ...result,
-            message: `Water usage recorded: ${waterUsed} litres consumed`
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// Get client water status
-app.get("/api/water-status/:meterNumber", async (req, res) => {
-    try {
-        const { meterNumber } = req.params;
-        const doc = await db.collection("clients").doc(meterNumber).get();
-
-        if (!doc.exists) {
-            return res.status(404).json({
-                success: false,
-                error: "Client not found"
-            });
-        }
-
-        const clientData = doc.data();
-        res.json({
-            success: true,
-            ...clientData,
-            rateInfo: "1 KES = 1 litre of water - ANY AMOUNT"
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// Payment history
-app.get("/api/payment-history/:meterNumber", async (req, res) => {
-    try {
-        const { meterNumber } = req.params;
+        // Find payment in database
         const paymentsQuery = await db.collection("payments")
-            .where("meterNumber", "==", meterNumber)
-            .orderBy("timestamp", "desc")
-            .limit(10)
+            .where("transactionId", "==", checkoutRequestId)
             .get();
 
-        const payments = paymentsQuery.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            conversionRate: "1 KES = 1 litre"
-        }));
-
-        res.json({
-            success: true,
-            payments,
-            totalPayments: payments.length
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// Debug endpoint to check payment status
-app.get("/api/debug-payment/:transactionId", async (req, res) => {
-    try {
-        const { transactionId } = req.params;
-        const paymentsQuery = await db.collection("payments").where("transactionId", "==", transactionId).get();
-
         if (paymentsQuery.empty) {
-            return res.json({ success: false, error: "Payment not found" });
+            console.warn(`⚠️ No payment found for CheckoutRequestID: ${checkoutRequestId}`);
+            // Still respond success
+            return res.json({ ResultCode: 0, ResultDesc: "Success" });
         }
 
-        const payment = paymentsQuery.docs[0].data();
+        const paymentDoc = paymentsQuery.docs[0];
+        const paymentId = paymentDoc.id;
+        const paymentData = paymentDoc.data();
+
+        console.log(`✅ Found payment: ${paymentId}`);
+        console.log(`   Amount: ${paymentData.amount} KES`);
+        console.log(`   Meter: ${paymentData.meterNumber}`);
+        console.log(`   Phone: ${paymentData.phone}`);
+
+        // Prepare update data
+        const updateData = {
+            callbackReceived: true,
+            callbackData: stkCallback,
+            resultCode: resultCode,
+            resultDescription: resultDesc,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            callbackTimestamp: new Date().toISOString()
+        };
+
+        if (resultCode === 0) {
+            // ✅ Payment successful
+            updateData.status = "Success";
+            updateData.processed = true;
+
+            // Extract receipt number and other details from metadata
+            const metadata = stkCallback.CallbackMetadata?.Item || [];
+            const receiptItem = metadata.find(item => item.Name === "MpesaReceiptNumber");
+            const amountItem = metadata.find(item => item.Name === "Amount");
+            const phoneItem = metadata.find(item => item.Name === "PhoneNumber");
+
+            if (receiptItem) {
+                updateData.mpesaReceiptNumber = receiptItem.Value;
+                console.log(`💰 M-Pesa Receipt: ${receiptItem.Value}`);
+            }
+
+            if (amountItem) {
+                updateData.actualAmount = amountItem.Value;
+                console.log(`💰 Actual Amount: ${amountItem.Value}`);
+            }
+
+            if (phoneItem) {
+                updateData.actualPhone = phoneItem.Value;
+                console.log(`📱 Actual Phone: ${phoneItem.Value}`);
+            }
+
+            console.log(`🎉 PAYMENT SUCCESSFUL! Receipt: ${updateData.mpesaReceiptNumber || 'N/A'}`);
+
+            // Update water usage
+            try {
+                await updateWaterAfterPayment({
+                    amount: paymentData.amount,
+                    meterNumber: paymentData.meterNumber,
+                    phone: paymentData.phone,
+                    transactionId: checkoutRequestId,
+                    userId: paymentData.userId
+                });
+
+                console.log(`💧 Water usage updated successfully`);
+            } catch (waterError) {
+                console.error(`❌ Failed to update water:`, waterError);
+                // Don't fail the callback - log error but continue
+            }
+
+        } else {
+            // ❌ Payment failed
+            updateData.status = "Failed";
+            updateData.error = resultDesc;
+            console.log(`❌ PAYMENT FAILED: ${resultDesc}`);
+        }
+
+        // Update payment record
+        await paymentDoc.ref.update(updateData);
+        console.log(`✅ Payment record updated: ${paymentId}`);
+
+        // ⚠️ IMPORTANT: Always respond with success to M-Pesa
+        // If we respond with failure, M-Pesa will keep retrying
         res.json({
+            ResultCode: 0,
+            ResultDesc: "Callback processed successfully"
+        });
+
+    } catch (error) {
+        console.error("❌ CALLBACK PROCESSING ERROR:", error);
+
+        // Still respond with success to avoid M-Pesa retries
+        res.json({
+            ResultCode: 0,
+            ResultDesc: "Success - Error logged"
+        });
+    }
+});
+
+// Check payment status
+app.get("/api/payment/:transactionId", async (req, res) => {
+    try {
+        const { transactionId } = req.params;
+
+        if (!transactionId) {
+            return res.status(400).json({
+                success: false,
+                error: "Transaction ID is required"
+            });
+        }
+
+        const paymentsQuery = await db.collection("payments")
+            .where("transactionId", "==", transactionId)
+            .get();
+
+        if (paymentsQuery.empty) {
+            return res.status(404).json({
+                success: false,
+                error: "Payment not found"
+            });
+        }
+
+        const paymentDoc = paymentsQuery.docs[0];
+        const paymentData = paymentDoc.data();
+
+        // Format response
+        const response = {
             success: true,
             payment: {
-                id: paymentsQuery.docs[0].id,
-                ...payment
+                id: paymentDoc.id,
+                ...paymentData,
+                // Convert timestamps to ISO strings for readability
+                timestamp: paymentData.timestamp?.toDate?.()?.toISOString() || paymentData.timestamp,
+                updatedAt: paymentData.updatedAt?.toDate?.()?.toISOString() || paymentData.updatedAt,
+                processedAt: paymentData.processedAt?.toDate?.()?.toISOString() || paymentData.processedAt
             }
-        });
+        };
+
+        res.json(response);
     } catch (error) {
+        console.error("Payment status error:", error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -507,26 +658,30 @@ app.get("/api/debug-payment/:transactionId", async (req, res) => {
     }
 });
 
-// Health check endpoint
-app.get("/health", (req, res) => {
-    res.json({
-        status: "OK",
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        memory: process.memoryUsage(),
-        waterRates: WATER_RATES,
-        note: "Any amount accepted - no restrictions"
-    });
-});
-
-// Start server
+// ========== START SERVER ==========
 const PORT = process.env.PORT || 5000;
+
 app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`💧 Water Rate: 1 KES = 1 litre`);
-    console.log(`💰 ANY AMOUNT ACCEPTED - No restrictions`);
-    console.log(`📍 Local: http://localhost:${PORT}`);
-    console.log(`🌐 Public: https://smartpay-billing.onrender.com`);
-    console.log(`✅ Test endpoint: https://smartpay-billing.onrender.com/test`);
-    console.log(`💧 Health check: https://smartpay-billing.onrender.com/health`);
+    console.log(`🚀 ========== SMART PAY API STARTED ==========`);
+    console.log(`   Port: ${PORT}`);
+    console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`   Render URL: ${renderUrl}`);
+    console.log(`   Callback URL: ${callbackUrl}`);
+    console.log(`   M-Pesa Environment: Sandbox`);
+    console.log(`   Water Rate: 1 KES = 1 litre`);
+    console.log(`   Server Time: ${new Date().toISOString()}`);
+    console.log(`   Health Check: ${renderUrl}/health`);
+    console.log(`   Test Endpoint: ${renderUrl}/test`);
+    console.log(``);
+    console.log(`💡 SANDBOX TESTING INFORMATION:`);
+    console.log(`   Test Phone: 254708374149`);
+    console.log(`   Test PIN: 1234`);
+    console.log(`   Shortcode: 174379`);
+    console.log(`   Business Name: SAFARICOM`);
+    console.log(``);
+    console.log(`📱 To test payment:`);
+    console.log(`   1. Use phone: 254708374149`);
+    console.log(`   2. Enter any amount (e.g., 10)`);
+    console.log(`   3. Enter PIN: 1234 when prompted`);
+    console.log(`===========================================`);
 });

@@ -5,7 +5,7 @@ import '../model/payment_model.dart';
 import '../model/water_usage_model.dart';
 
 class MpesaService {
-  // Node.js backend URL - Update this with your actual server IP
+  // Production backend URL
   static const String _baseUrl = 'https://smartpay-billing.onrender.com';
   static String get baseUrl => _baseUrl;
 
@@ -14,36 +14,27 @@ class MpesaService {
     try {
       print('🔗 Testing connection to: $baseUrl');
 
-      // Try multiple endpoints
-      final endpoints = ['/test', '/', '/health'];
+      final response = await http.get(
+        Uri.parse('$baseUrl/test'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 15));
 
-      for (String endpoint in endpoints) {
-        try {
-          final response = await http.get(
-            Uri.parse('$baseUrl$endpoint'),
-            headers: {'Content-Type': 'application/json'},
-          ).timeout(const Duration(seconds: 10));
+      print('🔗 Status: ${response.statusCode}');
 
-          print('🔗 $endpoint status: ${response.statusCode}');
-          print('🔗 $endpoint response: ${response.body}');
-
-          if (response.statusCode == 200) {
-            print('✅ Server connection successful via $endpoint');
-            return true;
-          }
-        } catch (e) {
-          print('❌ $endpoint failed: $e');
-        }
+      if (response.statusCode == 200) {
+        print('✅ Server connection successful');
+        return true;
+      } else {
+        print('❌ Server responded with status: ${response.statusCode}');
+        return false;
       }
-
-      return false;
     } catch (e) {
-      print('❌ All connection attempts failed: $e');
+      print('❌ Connection test failed: $e');
       return false;
     }
   }
 
-  /// Initiates M-Pesa STK Push Payment - Better error handling
+  /// Initiates M-Pesa STK Push Payment
   static Future<Map<String, dynamic>> initiatePayment({
     required String userId,
     required String phone,
@@ -58,7 +49,7 @@ class MpesaService {
       print('   Amount: $amount KES');
       print('   Meter: $meterNumber');
 
-      // Format phone number (ensure it starts with 254)
+      // Format phone number for M-Pesa
       String formattedPhone = formatPhoneNumber(phone);
 
       final response = await http
@@ -78,7 +69,7 @@ class MpesaService {
           .timeout(const Duration(seconds: 30));
 
       print('📡 HTTP Status Code: ${response.statusCode}');
-      print('📡 Raw Response: ${response.body}');
+      print('📡 Response Body: ${response.body}');
 
       Map<String, dynamic> data;
       try {
@@ -101,13 +92,16 @@ class MpesaService {
             reference: data['MerchantRequestID']?.toString() ?? '',
           );
 
+          print('\n✅ STK Push Sent Successfully!');
+          print('📱 CheckoutRequestID: ${data['CheckoutRequestID']}');
+          print('📞 Phone: $formattedPhone');
+
           return {
             'success': true,
-            'message':
-                data['CustomerMessage'] ?? 'Payment initiated successfully',
+            'message': data['CustomerMessage'] ?? 'STK Push sent successfully',
             'reference': data['MerchantRequestID']?.toString() ?? 'N/A',
             'checkoutRequestId': data['CheckoutRequestID']?.toString() ?? '',
-            'status': 'pending'
+            'status': 'pending',
           };
         } else {
           String errorMessage =
@@ -124,7 +118,7 @@ class MpesaService {
     } catch (e) {
       print('❌ Payment Initiation Error: $e');
 
-      // Save failed payment to Firestore for record keeping
+      // Save failed payment to Firestore
       try {
         await savePaymentToFirestore(
           userId: userId,
@@ -144,24 +138,42 @@ class MpesaService {
     }
   }
 
-  /// Format phone number to MPesa format (254...)
+  /// Format phone number for M-Pesa
   static String formatPhoneNumber(String phone) {
     // Remove any spaces or special characters
     String cleaned = phone.replaceAll(RegExp(r'[^\d]'), '');
 
-    // Convert to 254 format
+    // Convert to 254 format for Kenya numbers
     if (cleaned.startsWith('0')) {
       return '254${cleaned.substring(1)}';
     } else if (cleaned.startsWith('+254')) {
       return cleaned.substring(1);
     } else if (cleaned.startsWith('254')) {
       return cleaned;
-    } else {
+    } else if (cleaned.length == 9) {
       return '254$cleaned';
+    } else {
+      return cleaned; // Return as-is for international numbers
     }
   }
 
-  /// Saves Payment to Firestore using Payment Model
+  /// Validate Kenyan phone number
+  static bool isValidKenyanPhone(String phone) {
+    final formatted = formatPhoneNumber(phone);
+
+    // Check if it's a valid Kenyan mobile number
+    // 2547xxxxxxxx or 2541xxxxxxxx
+    if (formatted.startsWith('2547') && formatted.length == 12) {
+      return true;
+    }
+    if (formatted.startsWith('2541') && formatted.length == 12) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /// Saves Payment to Firestore
   static Future<void> savePaymentToFirestore({
     required String userId,
     required String phone,
@@ -182,7 +194,7 @@ class MpesaService {
         status: status,
         transactionId: transactionId,
         timestamp: DateTime.now(),
-        litresPurchased: calculateUnits(amount),
+        litresPurchased: amount, // 1 KES = 1 litre
         processed: false,
         reference: reference,
         error: error,
@@ -197,12 +209,6 @@ class MpesaService {
       print('❌ Firestore Save Error: $e');
       rethrow;
     }
-  }
-
-  /// Calculate units based on amount (example: 1 unit = KES 50)
-  static double calculateUnits(double amount) {
-    const ratePerUnit = 50.0; // Adjust this rate as needed
-    return amount / ratePerUnit;
   }
 
   /// Check Payment Status
