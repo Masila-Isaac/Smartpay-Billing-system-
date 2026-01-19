@@ -27,7 +27,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late User _currentUser;
   Map<String, dynamic> _userData = {};
   Map<String, dynamic> _accountData = {};
-  Map<String, dynamic> _usageData = {};
+  final Map<String, dynamic> _usageData = {};
   bool _isLoading = true;
   bool _isEditing = false;
 
@@ -579,7 +579,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
+        SizedBox(
           width: 30,
           child: Icon(icon, size: 16, color: Colors.grey[600]),
         ),

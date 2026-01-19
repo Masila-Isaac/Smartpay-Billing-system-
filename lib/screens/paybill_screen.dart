@@ -700,7 +700,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
     required double amount,
   }) async {
     try {
-      final _firestore = FirebaseFirestore.instance;
+      final firestore = FirebaseFirestore.instance;
 
       print('💧 Updating water usage after payment');
       print('• User ID: $userId');
@@ -710,7 +710,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
 
       // Get current water usage data
       final waterUsageDoc =
-          await _firestore.collection('waterUsage').doc(meterNumber).get();
+          await firestore.collection('waterUsage').doc(meterNumber).get();
 
       if (waterUsageDoc.exists) {
         final currentData = waterUsageDoc.data() as Map<String, dynamic>;
@@ -737,7 +737,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
         print('   - New totalPurchased: $newTotalPurchased');
 
         // Update waterUsage collection
-        await _firestore.collection('waterUsage').doc(meterNumber).update({
+        await firestore.collection('waterUsage').doc(meterNumber).update({
           'currentReading': newCurrentReading,
           'remainingUnits': newRemainingUnits,
           'totalUnitsPurchased': newTotalPurchased,
@@ -745,7 +745,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
         });
 
         // Update clients collection
-        await _firestore.collection('clients').doc(meterNumber).update({
+        await firestore.collection('clients').doc(meterNumber).update({
           'remainingLitres': newRemainingUnits,
           'totalLitresPurchased': newTotalPurchased,
           'lastTopUp': FieldValue.serverTimestamp(),
@@ -753,7 +753,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
         });
 
         // Update dashboard_data
-        await _firestore.collection('dashboard_data').doc(userId).set({
+        await firestore.collection('dashboard_data').doc(userId).set({
           'remainingBalance': newRemainingUnits,
           'totalPurchased': newTotalPurchased,
           'meterNumber': meterNumber,
@@ -763,7 +763,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
         print('✅ Water usage updated successfully');
       } else {
         // Create new water usage document
-        await _firestore.collection('waterUsage').doc(meterNumber).set({
+        await firestore.collection('waterUsage').doc(meterNumber).set({
           'meterNumber': meterNumber,
           'userId': userId,
           'currentReading': litresPurchased,
