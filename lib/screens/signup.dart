@@ -6,6 +6,8 @@ import 'package:smartpay/deep/error_handler.dart';
 import 'package:smartpay/deep/inputformatter.dart';
 import 'package:smartpay/deep/load_overlay.dart' show LoadingOverlay;
 import 'package:smartpay/deep/password_strength.dart';
+import 'package:smartpay/screens/county_selection.dart'
+    show CountySelectionScreen;
 import 'package:smartpay/screens/login.dart';
 import 'package:smartpay/services/firebase_Auth.dart';
 
@@ -293,7 +295,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         });
 
         print('✅ User created successfully across all collections');
-        _showSuccessDialog(meterNumber, accountNumber);
+        _showSuccessDialog(meterNumber, accountNumber, user.uid);
       }
     } catch (e) {
       print('❌ Sign up error: $e');
@@ -309,7 +311,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   Future<bool> _showWeakPasswordDialog() async {
-    return await showDialog(
+    return await showDialog<bool>(
           context: context,
           barrierDismissible: false,
           builder: (context) => AlertDialog(
@@ -359,7 +361,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
         false;
   }
 
-  void _showSuccessDialog(String meterNumber, String accountNumber) {
+  void _showSuccessDialog(
+      String meterNumber, String accountNumber, String userId) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -372,7 +375,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
             children: [
               Icon(Icons.check_circle, color: Colors.green),
               SizedBox(width: 8),
-              Text('Success'),
+              Text('Account Created'),
             ],
           ),
           content: Column(
@@ -380,7 +383,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Account created successfully!',
+                'Welcome to SmartPay Kenya!',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 16),
@@ -391,16 +394,29 @@ class _SignUpScreenState extends State<SignUpScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.amber[50],
+                  color: Colors.blue[50],
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.amber.shade200),
+                  border: Border.all(color: Colors.blue.shade200),
                 ),
-                child: const Text(
-                  'Please save these numbers for future reference. You\'ll need them for login and payments.',
-                  style: TextStyle(
-                    color: Colors.amber,
-                    fontSize: 12,
-                  ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '📍 Next Step: Select Your County',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Please select your county to access local water rates and payment methods.',
+                      style: TextStyle(
+                        color: Colors.blue,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -409,12 +425,20 @@ class _SignUpScreenState extends State<SignUpScreen> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
+                // Redirect to county selection
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => CountySelectionScreen(
+                      userId: userId,
+                      meterNumber: meterNumber,
+                      userName: nameController.text.trim(),
+                      userEmail: emailController.text.trim(),
+                    ),
+                  ),
                 );
               },
-              child: const Text('Continue to Login'),
+              child: const Text('Select County'),
             ),
           ],
         );

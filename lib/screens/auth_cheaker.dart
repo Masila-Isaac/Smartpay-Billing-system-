@@ -51,6 +51,7 @@ class AuthWrapper extends StatelessWidget {
                   meterNumber: userData['meterNumber'] ?? '',
                   userName: userData['name'] ?? 'User',
                   userEmail: userData['email'] ?? '',
+                  countyCode: '',
                 );
               } else {
                 // If user document doesn't exist, log out and show login

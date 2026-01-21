@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:smartpay/config/counties.dart' show CountyConfig;
+import 'package:smartpay/model/county.dart' show County;
+import 'package:smartpay/screens/county_Settings.dart';
 import 'package:smartpay/screens/paybill_screen.dart';
 import 'package:smartpay/screens/viewreport.dart';
 import 'package:smartpay/screens/water_Reading.dart';
@@ -10,13 +13,14 @@ import 'package:smartpay/screens/profile_screen.dart';
 import 'package:smartpay/screens/settings_screen.dart';
 import 'package:smartpay/screens/notifications_screen.dart';
 import 'package:smartpay/screens/help_support_screen.dart';
-import 'package:smartpay/services/auth_service.dart';
+import 'package:smartpay/services/auth_service.dart' show AuthService;
 
 class Dashboard extends StatefulWidget {
   final String userId;
   final String meterNumber;
   final String userName;
   final String userEmail;
+  final String countyCode;
 
   const Dashboard({
     super.key,
@@ -24,6 +28,7 @@ class Dashboard extends StatefulWidget {
     required this.meterNumber,
     required this.userName,
     required this.userEmail,
+    required this.countyCode,
   });
 
   @override
@@ -39,6 +44,10 @@ class _DashboardState extends State<Dashboard> {
   bool _isLoading = true;
   bool _hasValidMeterNumber = false;
 
+  late County _county;
+  Color _primaryColor = Colors.blueAccent;
+  Color _secondaryColor = const Color(0xFF00C2FF);
+
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   StreamSubscription? _waterUsageSubscription;
 
@@ -46,7 +55,14 @@ class _DashboardState extends State<Dashboard> {
   void initState() {
     super.initState();
     print('📱 Dashboard initialized for user: ${widget.userId}');
-    print('📊 Meter Number: "${widget.meterNumber}"');
+    print('📍 County Code: ${widget.countyCode}');
+
+    // Load county configuration
+    _county = CountyConfig.getCounty(widget.countyCode);
+    _primaryColor = Color(
+        int.parse(_county.theme['primaryColor'].replaceFirst('#', '0xFF')));
+    _secondaryColor = Color(
+        int.parse(_county.theme['secondaryColor'].replaceFirst('#', '0xFF')));
 
     _hasValidMeterNumber = widget.meterNumber.isNotEmpty;
 
@@ -116,11 +132,14 @@ class _DashboardState extends State<Dashboard> {
         accountNumber = clientData['accountNumber'] ?? '';
       }
 
-      // Create initial water usage document
+      // Create initial water usage document with county info
       await _firestore.collection('waterUsage').doc(widget.meterNumber).set({
         'meterNumber': widget.meterNumber,
         'userId': widget.userId,
         'accountNumber': accountNumber,
+        'countyCode': widget.countyCode,
+        'countyName': _county.name,
+        'waterRate': _county.waterRate,
         'currentReading': 0.0,
         'previousReading': 0.0,
         'remainingUnits': 0.0,
@@ -156,10 +175,11 @@ class _DashboardState extends State<Dashboard> {
         'waterUsed': _unitsConsumed,
         'totalPurchased': _totalPurchased,
         'meterNumber': widget.meterNumber,
+        'countyCode': widget.countyCode,
         'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      print('📤 Synced with dashboard_data'); // guide
+      print('📤 Synced with dashboard_data');
     } catch (e) {
       print('⚠️ Error syncing with dashboard_data: $e');
     }
@@ -229,12 +249,13 @@ class _DashboardState extends State<Dashboard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildProfessionalBanner(),
-                    const SizedBox(height: 32),
+                    _buildWaterRateInfo(),
+                    const SizedBox(height: 24),
                     _buildMenuButton(
                       context,
                       "Units available for usage",
                       Icons.water_drop_outlined,
-                      Colors.blueAccent,
+                      _primaryColor,
                       () {
                         _navigateWithSlideTransition(
                           context,
@@ -250,13 +271,14 @@ class _DashboardState extends State<Dashboard> {
                       context,
                       "Make Payments",
                       Icons.payment_outlined,
-                      Colors.green,
+                      _secondaryColor,
                       () {
                         _navigateWithSlideTransition(
                           context,
                           PayBillScreen(
                             meterNumber: widget.meterNumber,
                             userId: widget.userId,
+                            countyCode: widget.countyCode,
                           ),
                         );
                       },
@@ -308,25 +330,26 @@ class _DashboardState extends State<Dashboard> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blueAccent.withOpacity(0.1),
+                color: _primaryColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Image.asset(
-                'assets/images/logo.png', // Changed to logo_white.png
+                'assets/images/logo.png',
                 height: 80,
-                errorBuilder: (context, error, stackTrace) => const Icon(
-                    Icons.water_drop,
-                    size: 80,
-                    color: Colors.blueAccent),
+                errorBuilder: (context, error, stackTrace) => Icon(
+                  Icons.water_drop,
+                  size: 80,
+                  color: _primaryColor,
+                ),
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               'SmartPay',
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.w700,
-                color: Colors.blueAccent,
+                color: _primaryColor,
               ),
             ),
             const SizedBox(height: 10),
@@ -337,13 +360,56 @@ class _DashboardState extends State<Dashboard> {
                 color: Colors.grey,
               ),
             ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+              decoration: BoxDecoration(
+                color: _primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4),
+                      image: DecorationImage(
+                        image: AssetImage(_county.countyLogo),
+                        fit: BoxFit.cover,
+                        onError: (error, stackTrace) => Container(
+                          color: _primaryColor,
+                          child: const Icon(
+                            Icons.location_city,
+                            size: 10,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _county.name,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _primaryColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 30),
-            const CircularProgressIndicator(),
+            CircularProgressIndicator(
+              color: _primaryColor,
+            ),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               'Loading your dashboard...',
               style: TextStyle(
-                color: Colors.grey,
+                color: _primaryColor,
               ),
             ),
           ],
@@ -362,12 +428,12 @@ class _DashboardState extends State<Dashboard> {
 
     return Container(
       width: double.infinity,
-      height: 280, // Increased height to prevent overflow
+      height: 280,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.15),
+            color: _primaryColor.withOpacity(0.15),
             blurRadius: 25,
             offset: const Offset(0, 10),
             spreadRadius: 1,
@@ -380,29 +446,21 @@ class _DashboardState extends State<Dashboard> {
             borderRadius: BorderRadius.circular(20),
             child: ColorFiltered(
               colorFilter: ColorFilter.mode(
-                Colors.black.withOpacity(0.4),
-                BlendMode.darken,
+                _primaryColor.withOpacity(0.2),
+                BlendMode.multiply,
               ),
-              child: Image.asset(
-                'assets/images/banner.png',
-                width: double.infinity,
-                height: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.blue.shade400,
-                          Colors.blue.shade700,
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                  );
-                },
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      _primaryColor.withOpacity(0.3),
+                      _primaryColor.withOpacity(0.7),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                ),
               ),
             ),
           ),
@@ -413,12 +471,58 @@ class _DashboardState extends State<Dashboard> {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withOpacity(0.3),
-                  Colors.black.withOpacity(0.7),
+                  _primaryColor.withOpacity(0.3),
+                  _primaryColor.withOpacity(0.7),
                 ],
               ),
             ),
           ),
+
+          // County logo/badge
+          Positioned(
+            top: 20,
+            right: 20,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      image: DecorationImage(
+                        image: AssetImage(_county.countyLogo),
+                        fit: BoxFit.cover,
+                        onError: (error, stackTrace) => Container(
+                          color: Colors.white,
+                          child: Icon(
+                            Icons.location_city,
+                            size: 16,
+                            color: _primaryColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _county.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
           Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -447,7 +551,7 @@ class _DashboardState extends State<Dashboard> {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                _getFirstName(), // Show only first name
+                                _getFirstName(),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 24,
@@ -456,13 +560,14 @@ class _DashboardState extends State<Dashboard> {
                                 ),
                               ),
                               const SizedBox(height: 4),
-                              // Meter number with better wrapping
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Icon(Icons.speed_outlined,
-                                      color: Colors.white.withOpacity(0.8),
-                                      size: 14),
+                                  Icon(
+                                    Icons.speed_outlined,
+                                    color: Colors.white.withOpacity(0.8),
+                                    size: 14,
+                                  ),
                                   const SizedBox(width: 4),
                                   Flexible(
                                     child: Text(
@@ -510,14 +615,14 @@ class _DashboardState extends State<Dashboard> {
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                Colors.blue.shade400,
-                                Colors.blue.shade600,
+                                _primaryColor,
+                                _secondaryColor,
                               ],
                             ),
                             borderRadius: BorderRadius.circular(12),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.blue.withOpacity(0.4),
+                                color: _primaryColor.withOpacity(0.4),
                                 blurRadius: 10,
                                 offset: const Offset(0, 4),
                               ),
@@ -563,6 +668,54 @@ class _DashboardState extends State<Dashboard> {
                     const SizedBox(height: 8),
                     _buildProgressBar(),
                   ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWaterRateInfo() {
+    return Container(
+      margin: const EdgeInsets.only(top: 16, bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _primaryColor.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _primaryColor.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, color: _primaryColor, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${_county.waterProvider} Water Rates',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: _primaryColor,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Current rate: KES ${_county.waterRate.toStringAsFixed(2)} per litre',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Paybill: ${_county.paybillNumber} • Till: ${_county.tillNumber}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                  ),
                 ),
               ],
             ),
@@ -639,10 +792,10 @@ class _DashboardState extends State<Dashboard> {
             flex: usedWidth.round(),
             child: Container(
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   colors: [
-                    Color(0xFF00D4FF),
-                    Color(0xFF0099FF),
+                    _secondaryColor,
+                    _primaryColor,
                   ],
                 ),
                 borderRadius: BorderRadius.circular(3),
@@ -747,26 +900,41 @@ class _DashboardState extends State<Dashboard> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.blueAccent.withOpacity(0.1),
+                  color: _primaryColor.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Image.asset(
-                  'assets/images/logo.png', // Changed to  logo_white.png
+                  'assets/images/logo.png',
                   height: 32,
                   errorBuilder: (context, error, stackTrace) {
-                    return const Icon(Icons.water_drop,
-                        color: Colors.blueAccent);
+                    return Icon(
+                      Icons.water_drop,
+                      color: _primaryColor,
+                    );
                   },
                 ),
               ),
               const SizedBox(width: 12),
-              const Text(
-                "SmartPay",
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.black87,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "SmartPay",
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  Text(
+                    _county.name,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: _primaryColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -777,9 +945,9 @@ class _DashboardState extends State<Dashboard> {
                 color: Colors.grey[50],
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.more_vert,
-                color: Colors.black54,
+                color: _primaryColor,
                 size: 22,
               ),
             ),
@@ -787,55 +955,65 @@ class _DashboardState extends State<Dashboard> {
               _handleMenuSelection(context, value);
             },
             itemBuilder: (BuildContext context) => [
-              const PopupMenuItem<String>(
+              PopupMenuItem<String>(
                 value: 'profile',
                 child: Row(
                   children: [
-                    Icon(Icons.person_outline, size: 20, color: Colors.black54),
-                    SizedBox(width: 12),
-                    Text('Profile'),
+                    Icon(Icons.person_outline, size: 20, color: _primaryColor),
+                    const SizedBox(width: 12),
+                    const Text('Profile'),
                   ],
                 ),
               ),
-              const PopupMenuItem<String>(
+              PopupMenuItem<String>(
                 value: 'notifications',
                 child: Row(
                   children: [
                     Icon(Icons.notifications_outlined,
-                        size: 20, color: Colors.black54),
-                    SizedBox(width: 12),
-                    Text('Notifications'),
+                        size: 20, color: _primaryColor),
+                    const SizedBox(width: 12),
+                    const Text('Notifications'),
                   ],
                 ),
               ),
-              const PopupMenuItem<String>(
+              PopupMenuItem<String>(
                 value: 'help',
                 child: Row(
                   children: [
-                    Icon(Icons.help_outline, size: 20, color: Colors.black54),
-                    SizedBox(width: 12),
-                    Text('Help & Support'),
+                    Icon(Icons.help_outline, size: 20, color: _primaryColor),
+                    const SizedBox(width: 12),
+                    const Text('Help & Support'),
                   ],
                 ),
               ),
-              const PopupMenuItem<String>(
+              PopupMenuItem<String>(
+                value: 'county_settings',
+                child: Row(
+                  children: [
+                    Icon(Icons.location_city, size: 20, color: _primaryColor),
+                    const SizedBox(width: 12),
+                    const Text('County Settings'),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
                 value: 'settings',
                 child: Row(
                   children: [
                     Icon(Icons.settings_outlined,
-                        size: 20, color: Colors.black54),
-                    SizedBox(width: 12),
-                    Text('Settings'),
+                        size: 20, color: _primaryColor),
+                    const SizedBox(width: 12),
+                    const Text('Settings'),
                   ],
                 ),
               ),
-              const PopupMenuItem<String>(
+              PopupMenuItem<String>(
                 value: 'logout',
                 child: Row(
                   children: [
                     Icon(Icons.logout_outlined, size: 20, color: Colors.red),
-                    SizedBox(width: 12),
-                    Text(
+                    const SizedBox(width: 12),
+                    const Text(
                       'Logout',
                       style: TextStyle(color: Colors.red),
                     ),
@@ -934,6 +1112,12 @@ class _DashboardState extends State<Dashboard> {
       case 'help':
         _navigateWithSlideTransition(context, const HelpSupportScreen());
         break;
+      case 'county_settings':
+        _navigateWithSlideTransition(
+          context,
+          CountySettingsScreen(),
+        );
+        break;
       case 'settings':
         _navigateWithSlideTransition(context, const SettingsScreen());
         break;
@@ -957,17 +1141,18 @@ class _DashboardState extends State<Dashboard> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
+                Icon(
                   Icons.logout_outlined,
                   size: 48,
-                  color: Colors.red,
+                  color: _primaryColor,
                 ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   "Logout",
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
+                    color: _primaryColor,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -989,8 +1174,12 @@ class _DashboardState extends State<Dashboard> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           padding: const EdgeInsets.symmetric(vertical: 12),
+                          side: BorderSide(color: _primaryColor),
                         ),
-                        child: const Text("Cancel"),
+                        child: Text(
+                          "Cancel",
+                          style: TextStyle(color: _primaryColor),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -1005,8 +1194,10 @@ class _DashboardState extends State<Dashboard> {
                             context: context,
                             barrierDismissible: false,
                             builder: (BuildContext context) {
-                              return const Center(
-                                child: CircularProgressIndicator(),
+                              return Center(
+                                child: CircularProgressIndicator(
+                                  color: _primaryColor,
+                                ),
                               );
                             },
                           );
@@ -1038,7 +1229,8 @@ class _DashboardState extends State<Dashboard> {
                           }
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
+                          backgroundColor: _primaryColor,
+                          foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),

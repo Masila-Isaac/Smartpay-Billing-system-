@@ -212,7 +212,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
       MaterialPageRoute(
         builder: (context) => PayBillScreen(
           meterNumber: widget.meterNumber,
-          userId: widget.userId, // FIX: Use widget.userId
+          userId: widget.userId, countyCode: '', // FIX: Use widget.userId
         ),
       ),
     );

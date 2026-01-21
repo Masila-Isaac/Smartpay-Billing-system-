@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../services/mpesa_service.dart';
+import 'package:smartpay/model/county.dart' show County;
+import 'package:smartpay/services/county_payment_factory.dart';
+import 'package:smartpay/config/counties.dart';
 
 class PayBillScreen extends StatefulWidget {
   final String meterNumber;
   final String userId;
+  final String countyCode;
 
   const PayBillScreen({
     super.key,
     required this.meterNumber,
     required this.userId,
+    required this.countyCode,
   });
 
   @override
@@ -27,10 +31,41 @@ class _PayBillScreenState extends State<PayBillScreen> {
   bool _paymentCompleted = false;
   String? _paymentReference;
   String _paymentStatus = 'pending';
+  double _litresPurchased = 0.0;
+
+  late County _county;
+  late CountyPaymentService _paymentService;
+  List<Map<String, dynamic>> _paymentMethods = [];
+  String _selectedPaymentMethod = '';
+  String _paybillNumber = '';
+  String _tillNumber = '';
+  Color _primaryColor = Colors.blueAccent;
+  double _waterRate = 1.0;
+  double _litresToPurchase = 0.0;
 
   @override
   void initState() {
     super.initState();
+
+    // Load county configuration
+    _county = CountyConfig.getCounty(widget.countyCode);
+    _primaryColor = Color(
+        int.parse(_county.theme['primaryColor'].replaceFirst('#', '0xFF')));
+    _waterRate = _county.waterRate;
+
+    // Load payment methods
+    _paymentMethods =
+        CountyPaymentFactory.getEnabledPaymentMethods(widget.countyCode);
+    _selectedPaymentMethod =
+        _paymentMethods.isNotEmpty ? _paymentMethods.first['id'] : '';
+
+    // Initialize payment service
+    _updatePaymentService();
+
+    // Set paybill and till numbers
+    _paybillNumber = _county.paybillNumber;
+    _tillNumber = _county.tillNumber;
+
     _initializeForm();
     _testServerConnection();
   }
@@ -40,6 +75,13 @@ class _PayBillScreenState extends State<PayBillScreen> {
       meterNumberController.text = widget.meterNumber;
     }
     _loadUserPhoneNumber();
+  }
+
+  void _updatePaymentService() {
+    _paymentService = CountyPaymentFactory.getService(
+      widget.countyCode,
+      _selectedPaymentMethod,
+    );
   }
 
   Future<void> _loadUserPhoneNumber() async {
@@ -65,7 +107,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
 
   Future<void> _testServerConnection() async {
     try {
-      final connected = await MpesaService.testConnection();
+      final connected = await _paymentService.testConnection();
       setState(() => _serverConnected = connected);
     } catch (e) {
       debugPrint('Connection test error: $e');
@@ -78,8 +120,18 @@ class _PayBillScreenState extends State<PayBillScreen> {
       _paymentCompleted = false;
       _paymentReference = null;
       _paymentStatus = 'pending';
+      _litresPurchased = 0.0;
+      _litresToPurchase = 0.0;
     });
     amountController.clear();
+  }
+
+  // Update amount controller to calculate litres
+  void _updateLitresCalculation(String amountText) {
+    final amount = double.tryParse(amountText) ?? 0.0;
+    setState(() {
+      _litresToPurchase = _county.calculateLitres(amount);
+    });
   }
 
   @override
@@ -88,14 +140,16 @@ class _PayBillScreenState extends State<PayBillScreen> {
       appBar: AppBar(
         title: Text(
           _paymentCompleted ? 'Payment Status' : 'Pay Water Bill',
-          style: const TextStyle(
-              fontWeight: FontWeight.bold, color: Colors.black87),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: _primaryColor,
+          ),
         ),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0.5,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black87),
+          icon: Icon(Icons.arrow_back, color: _primaryColor),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -116,24 +170,42 @@ class _PayBillScreenState extends State<PayBillScreen> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.blueAccent.withOpacity(0.1),
+                  color: _primaryColor.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child:
-                    const Icon(Icons.water_drop, color: Colors.blue, size: 40),
+                child: Icon(Icons.water_drop, color: _primaryColor, size: 40),
               ),
               const SizedBox(width: 12),
-              const Text(
-                'SmartPay',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'SmartPay',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  Text(
+                    _county.name,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _primaryColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
           const SizedBox(height: 25),
+
+          // County Info Card
+          _buildCountyInfoCard(),
+
+          // Water Rate Info
+          _buildWaterRateInfo(),
 
           // Server Status
           if (!_serverConnected)
@@ -152,20 +224,25 @@ class _PayBillScreenState extends State<PayBillScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      "Server not connected. Payments may fail.",
+                      "${_county.name} payment server not connected. Payments may fail.",
                       style: TextStyle(color: Colors.orange[800]),
                     ),
                   ),
                   TextButton(
                     onPressed: _testServerConnection,
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.orange[800],
+                    ),
                     child: const Text("RETRY"),
                   ),
                 ],
               ),
             ),
 
-          // Phone Number Validation Info
-          if (phoneController.text.isNotEmpty) _buildPhoneValidationInfo(),
+          // Payment Method Selector
+          _buildPaymentMethodSelector(),
+
+          const SizedBox(height: 16),
 
           // Payment Form
           Container(
@@ -177,8 +254,6 @@ class _PayBillScreenState extends State<PayBillScreen> {
             ),
             child: Column(
               children: [
-                _buildInfoCard('Paybill Number', '123456'),
-                const SizedBox(height: 16),
                 _buildTextField(
                   label: 'Meter Number',
                   controller: meterNumberController,
@@ -193,6 +268,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
                   hintText: 'e.g. 10, 50, 100, 500, 1000',
                   icon: Icons.attach_money_outlined,
                   keyboardType: TextInputType.number,
+                  onChanged: _updateLitresCalculation,
                 ),
                 const SizedBox(height: 16),
                 _buildTextField(
@@ -208,23 +284,35 @@ class _PayBillScreenState extends State<PayBillScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.blue[50],
+                    color: _primaryColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue.shade200),
+                    border: Border.all(color: _primaryColor.withOpacity(0.3)),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline,
-                          color: Colors.blue[700], size: 18),
+                      Icon(Icons.info_outline, color: _primaryColor, size: 18),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          "1 KES = 1 litre of water. You will receive an M-Pesa STK Push on your phone.",
-                          style: TextStyle(
-                            color: Colors.blue[800],
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "KES ${_waterRate.toStringAsFixed(2)} = 1 litre of water",
+                              style: TextStyle(
+                                color: _primaryColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "You will receive a payment prompt on your phone",
+                              style: TextStyle(
+                                color: _primaryColor.withOpacity(0.8),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -236,20 +324,24 @@ class _PayBillScreenState extends State<PayBillScreen> {
                   height: 50,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _serverConnected && _isPhoneValid()
-                          ? const Color(0xff006ee6)
+                      backgroundColor: _serverConnected &&
+                              _isPhoneValid() &&
+                              _isAmountValid()
+                          ? _primaryColor
                           : Colors.grey,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    onPressed:
-                        _serverConnected && !_isLoading && _isPhoneValid()
-                            ? _handlePayment
-                            : null,
+                    onPressed: _serverConnected &&
+                            !_isLoading &&
+                            _isPhoneValid() &&
+                            _isAmountValid()
+                        ? _handlePayment
+                        : null,
                     child: _isLoading
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(
@@ -257,14 +349,14 @@ class _PayBillScreenState extends State<PayBillScreen> {
                               color: Colors.white,
                             ),
                           )
-                        : const Row(
+                        : Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(Icons.payment, size: 20),
-                              SizedBox(width: 8),
+                              const SizedBox(width: 8),
                               Text(
                                 'PROCEED TO PAY',
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -281,81 +373,287 @@ class _PayBillScreenState extends State<PayBillScreen> {
     );
   }
 
-  Widget _buildPhoneValidationInfo() {
-    final phone = phoneController.text.trim();
-    final isValid = MpesaService.isValidKenyanPhone(phone);
-
-    if (isValid) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(12),
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.green[50],
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.green),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.green[800]),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                "Phone number is valid for M-Pesa",
-                style: TextStyle(color: Colors.green[800]),
-              ),
-            ),
-          ],
-        ),
-      );
-    } else {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(12),
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.orange[50],
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.orange),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.warning, color: Colors.orange[800]),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Phone number may not be valid for M-Pesa",
-                    style: TextStyle(color: Colors.orange[800]),
+  Widget _buildCountyInfoCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(6),
+                  image: DecorationImage(
+                    image: AssetImage(_county.countyLogo),
+                    fit: BoxFit.cover,
+                    onError: (error, stackTrace) => Container(
+                      color: _primaryColor.withOpacity(0.1),
+                      child: Icon(
+                        Icons.location_city,
+                        color: _primaryColor,
+                        size: 16,
+                      ),
+                    ),
                   ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _county.name,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: _primaryColor,
+                        fontSize: 18,
+                      ),
+                    ),
+                    Text(
+                      _county.waterProvider,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Paybill',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _paybillNumber,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: _primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_tillNumber.isNotEmpty && _tillNumber != 'N/A')
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Till Number',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _tillNumber,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: _primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_county.customerCare.isNotEmpty)
+            Row(
+              children: [
+                Icon(Icons.phone, size: 14, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text(
+                  'Customer Care: ${_county.customerCare}',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWaterRateInfo() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: _primaryColor.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _primaryColor.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: _primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              Icons.water_drop,
+              color: _primaryColor,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Water Rate',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: _primaryColor,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'KES ${_waterRate.toStringAsFixed(2)} per litre',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                ),
+                if (_litresToPurchase > 0) ...[
                   const SizedBox(height: 4),
                   Text(
-                    "Format: 07XXXXXXXX or 2547XXXXXXXX",
-                    style: TextStyle(
-                      color: Colors.orange[800],
-                      fontSize: 12,
+                    'You will receive ${_litresToPurchase.toStringAsFixed(2)} litres',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.green,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
-              ),
+              ],
             ),
-          ],
-        ),
-      );
-    }
+          ),
+        ],
+      ),
+    );
   }
 
-  bool _isPhoneValid() {
-    final phone = phoneController.text.trim();
-    if (phone.isEmpty) return false;
-    return MpesaService.isValidKenyanPhone(phone);
+  Widget _buildPaymentMethodSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Payment Method',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: _paymentMethods.map((method) {
+            final isSelected = _selectedPaymentMethod == method['id'];
+            return InkWell(
+              onTap: () {
+                setState(() {
+                  _selectedPaymentMethod = method['id'];
+                  _updatePaymentService();
+
+                  // Update paybill if method-specific
+                  if (method['paybill'] != null) {
+                    _paybillNumber = method['paybill'];
+                  }
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? _primaryColor.withOpacity(0.1)
+                      : Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isSelected ? _primaryColor : Colors.grey[300]!,
+                    width: isSelected ? 2 : 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        image: DecorationImage(
+                          image: AssetImage(method['logo']),
+                          fit: BoxFit.contain,
+                          onError: (error, stackTrace) => Icon(Icons.payment,
+                              size: 20,
+                              color: isSelected ? _primaryColor : Colors.grey),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      method['name'],
+                      style: TextStyle(
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal,
+                        color: isSelected ? _primaryColor : Colors.grey[800],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
   }
 
   Widget _buildSuccessScreen() {
     final isFailed = _paymentStatus == 'failed';
     final isPending = _paymentStatus == 'pending';
+    final isSuccess = _paymentStatus == 'successful';
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -407,10 +705,10 @@ class _PayBillScreenState extends State<PayBillScreen> {
           const SizedBox(height: 16),
           Text(
             'KES ${amountController.text}',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 32,
               fontWeight: FontWeight.bold,
-              color: Colors.black87,
+              color: _primaryColor,
             ),
           ),
           const SizedBox(height: 8),
@@ -423,22 +721,38 @@ class _PayBillScreenState extends State<PayBillScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Water Purchased: ${amountController.text} litres',
+            'Water Purchased: ${_litresPurchased.toStringAsFixed(2)} litres',
             style: TextStyle(
               fontSize: 14,
-              color: Colors.blue[700],
+              color: Colors.green,
               fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'County: ${_county.name}',
+            style: TextStyle(
+              fontSize: 14,
+              color: _primaryColor,
+              fontWeight: FontWeight.w500,
             ),
           ),
           if (_paymentReference != null && _paymentReference != 'N/A') ...[
             const SizedBox(height: 16),
-            Text(
-              'Reference: $_paymentReference',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
               ),
-              textAlign: TextAlign.center,
+              child: Text(
+                'Reference: $_paymentReference',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[700],
+                ),
+                textAlign: TextAlign.center,
+              ),
             ),
           ],
           const SizedBox(height: 16),
@@ -465,8 +779,12 @@ class _PayBillScreenState extends State<PayBillScreen> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
+                    side: BorderSide(color: _primaryColor),
                   ),
-                  child: const Text('Make Another Payment'),
+                  child: Text(
+                    'Make Another Payment',
+                    style: TextStyle(color: _primaryColor),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -474,7 +792,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
                 child: ElevatedButton(
                   onPressed: () => Navigator.pop(context),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueAccent,
+                    backgroundColor: _primaryColor,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
@@ -491,38 +809,6 @@ class _PayBillScreenState extends State<PayBillScreen> {
     );
   }
 
-  Widget _buildInfoCard(String label, String value) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
-          ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.blueAccent,
-              fontSize: 16,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildTextField({
     required String label,
     required TextEditingController controller,
@@ -530,6 +816,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
     bool enabled = true,
+    void Function(String)? onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -547,7 +834,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
           controller: controller,
           enabled: enabled && !_isLoading,
           keyboardType: keyboardType,
-          onChanged: (_) => setState(() {}),
+          onChanged: onChanged ?? (_) => setState(() {}),
           decoration: InputDecoration(
             hintText: hintText,
             prefixIcon: Icon(icon, color: Colors.grey.shade600),
@@ -557,7 +844,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Colors.blueAccent, width: 2),
+              borderSide: BorderSide(color: _primaryColor, width: 2),
             ),
             filled: true,
             fillColor: Colors.white,
@@ -567,6 +854,19 @@ class _PayBillScreenState extends State<PayBillScreen> {
     );
   }
 
+  bool _isPhoneValid() {
+    final phone = phoneController.text.trim();
+    if (phone.isEmpty) return false;
+    return _paymentService.isValidPhone(phone);
+  }
+
+  bool _isAmountValid() {
+    final amountText = amountController.text.trim();
+    if (amountText.isEmpty) return false;
+    final amount = double.tryParse(amountText) ?? 0.0;
+    return amount > 0;
+  }
+
   Future<void> _handlePayment() async {
     FocusScope.of(context).unfocus();
 
@@ -574,6 +874,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
     final meterNumber = meterNumberController.text.trim();
     final amountText = amountController.text.trim();
     final amount = double.tryParse(amountText) ?? 0.0;
+    final litres = _county.calculateLitres(amount);
 
     // Validation
     if (phone.isEmpty) {
@@ -596,9 +897,8 @@ class _PayBillScreenState extends State<PayBillScreen> {
       return;
     }
 
-    if (!MpesaService.isValidKenyanPhone(phone)) {
-      _showErrorDialog(
-          'Please enter a valid Safaricom phone number (07XXXXXXXX or 2547XXXXXXXX)');
+    if (!_paymentService.isValidPhone(phone)) {
+      _showErrorDialog('Please enter a valid phone number for ${_county.name}');
       return;
     }
 
@@ -606,18 +906,20 @@ class _PayBillScreenState extends State<PayBillScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Confirm Payment'),
+        title: Text('Confirm ${_county.name} Payment'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Amount: KES $amount'),
+            Text('Amount: KES ${amount.toStringAsFixed(2)}'),
+            Text('Litres: ${litres.toStringAsFixed(2)} litres'),
             Text('Phone: $phone'),
             Text('Meter: $meterNumber'),
+            Text('County: ${_county.name}'),
             const SizedBox(height: 16),
-            const Text(
-              'You will receive an M-Pesa STK Push on your phone to complete the payment.',
-              style: TextStyle(color: Colors.grey),
+            Text(
+              'You will receive a payment prompt on your phone to complete the payment.',
+              style: const TextStyle(color: Colors.grey),
             ),
           ],
         ),
@@ -628,6 +930,9 @@ class _PayBillScreenState extends State<PayBillScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _primaryColor,
+            ),
             child: const Text('Confirm'),
           ),
         ],
@@ -644,12 +949,13 @@ class _PayBillScreenState extends State<PayBillScreen> {
         throw Exception("Please log in to make payments");
       }
 
-      // Call M-Pesa service
-      final result = await MpesaService.initiatePayment(
+      // Call county-specific payment service
+      final result = await _paymentService.initiatePayment(
         userId: user.uid,
         phone: phone,
         amount: amount,
         meterNumber: meterNumber,
+        county: _county,
       );
 
       // Update water usage after successful payment
@@ -658,8 +964,9 @@ class _PayBillScreenState extends State<PayBillScreen> {
           await _updateWaterUsageAfterPayment(
             meterNumber: meterNumber,
             userId: widget.userId,
-            litresPurchased: amount,
+            litresPurchased: litres,
             amount: amount,
+            county: _county,
           );
         } catch (e) {
           debugPrint('Water usage update error: $e');
@@ -670,13 +977,15 @@ class _PayBillScreenState extends State<PayBillScreen> {
         _paymentCompleted = true;
         _paymentReference = result['reference'] ?? 'N/A';
         _paymentStatus = result['status'] ?? 'pending';
+        _litresPurchased = litres;
       });
 
       // Show success message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result['message'] ?? 'STK Push sent to your phone'),
+            content:
+                Text(result['message'] ?? 'Payment request sent to your phone'),
             backgroundColor: Colors.green,
           ),
         );
@@ -698,11 +1007,13 @@ class _PayBillScreenState extends State<PayBillScreen> {
     required String userId,
     required double litresPurchased,
     required double amount,
+    required County county,
   }) async {
     try {
       final firestore = FirebaseFirestore.instance;
 
       print('💧 Updating water usage after payment');
+      print('• County: ${county.name}');
       print('• User ID: $userId');
       print('• Meter: $meterNumber');
       print('• Litres Purchased: $litresPurchased');
@@ -741,6 +1052,9 @@ class _PayBillScreenState extends State<PayBillScreen> {
           'currentReading': newCurrentReading,
           'remainingUnits': newRemainingUnits,
           'totalUnitsPurchased': newTotalPurchased,
+          'countyCode': county.code,
+          'countyName': county.name,
+          'waterRate': county.waterRate,
           'lastUpdated': FieldValue.serverTimestamp(),
         });
 
@@ -748,6 +1062,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
         await firestore.collection('clients').doc(meterNumber).update({
           'remainingLitres': newRemainingUnits,
           'totalLitresPurchased': newTotalPurchased,
+          'county': county.code,
           'lastTopUp': FieldValue.serverTimestamp(),
           'lastUpdated': FieldValue.serverTimestamp(),
         });
@@ -757,6 +1072,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
           'remainingBalance': newRemainingUnits,
           'totalPurchased': newTotalPurchased,
           'meterNumber': meterNumber,
+          'countyCode': county.code,
           'lastUpdated': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
 
@@ -766,6 +1082,10 @@ class _PayBillScreenState extends State<PayBillScreen> {
         await firestore.collection('waterUsage').doc(meterNumber).set({
           'meterNumber': meterNumber,
           'userId': userId,
+          'accountNumber': '',
+          'countyCode': county.code,
+          'countyName': county.name,
+          'waterRate': county.waterRate,
           'currentReading': litresPurchased,
           'previousReading': 0.0,
           'remainingUnits': litresPurchased,
@@ -788,18 +1108,24 @@ class _PayBillScreenState extends State<PayBillScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.error_outline, color: Colors.red),
-            SizedBox(width: 8),
-            Text('Error'),
+            Icon(Icons.error_outline, color: _primaryColor),
+            const SizedBox(width: 8),
+            Text(
+              'Payment Error',
+              style: TextStyle(color: _primaryColor),
+            ),
           ],
         ),
         content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+            child: Text(
+              'OK',
+              style: TextStyle(color: _primaryColor),
+            ),
           ),
         ],
       ),

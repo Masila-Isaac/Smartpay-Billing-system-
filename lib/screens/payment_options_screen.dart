@@ -119,7 +119,7 @@ class PaymentOptionsScreen extends StatelessWidget {
                     MaterialPageRoute(
                       builder: (context) => PayBillScreen(
                         meterNumber: meterNumber,
-                        userId: userId, // Pass the userId here
+                        userId: userId, countyCode: '', // Pass the userId here
                       ),
                     ),
                   );
