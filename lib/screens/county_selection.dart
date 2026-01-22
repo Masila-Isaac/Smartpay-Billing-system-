@@ -58,38 +58,36 @@ class _CountySelectionScreenState extends State<CountySelectionScreen> {
       // Method 1: Check if county has a region property (as field/variable)
       try {
         // First check if it's accessible as a property
-        if (county is County) {
-          // If County class has a region field, use reflection or manual checking
-          // Since we can't know the exact structure, let's try different approaches
+        // If County class has a region field, use reflection or manual checking
+        // Since we can't know the exact structure, let's try different approaches
 
-          // Approach 1: Check if there's a 'region' field in the theme
-          if (county.theme.containsKey('region')) {
-            region = county.theme['region']?.toString() ?? 'Unknown';
-          }
-          // Approach 2: Create regions based on county name
-          else if (county.name.toLowerCase().contains('nairobi')) {
-            region = 'Nairobi Region';
-          } else if (county.name.toLowerCase().contains('kisumu') ||
-              county.name.toLowerCase().contains('kisii')) {
-            region = 'Nyanza Region';
-          } else if (county.name.toLowerCase().contains('mombasa') ||
-              county.name.toLowerCase().contains('kilifi')) {
-            region = 'Coastal Region';
-          } else if (county.name.toLowerCase().contains('nakuru') ||
-              county.name.toLowerCase().contains('naivasha')) {
-            region = 'Rift Valley Region';
-          } else if (county.name.toLowerCase().contains('kiambu') ||
-              county.name.toLowerCase().contains('thika')) {
-            region = 'Central Region';
-          } else if (county.name.toLowerCase().contains('kakamega') ||
-              county.name.toLowerCase().contains('bungoma')) {
-            region = 'Western Region';
-          } else if (county.name.toLowerCase().contains('machakos') ||
-              county.name.toLowerCase().contains('kitui')) {
-            region = 'Eastern Region';
-          } else {
-            region = 'Other Regions';
-          }
+        // Approach 1: Check if there's a 'region' field in the theme
+        if (county.theme.containsKey('region')) {
+          region = county.theme['region']?.toString() ?? 'Unknown';
+        }
+        // Approach 2: Create regions based on county name
+        else if (county.name.toLowerCase().contains('nairobi')) {
+          region = 'Nairobi Region';
+        } else if (county.name.toLowerCase().contains('kisumu') ||
+            county.name.toLowerCase().contains('kisii')) {
+          region = 'Nyanza Region';
+        } else if (county.name.toLowerCase().contains('mombasa') ||
+            county.name.toLowerCase().contains('kilifi')) {
+          region = 'Coastal Region';
+        } else if (county.name.toLowerCase().contains('nakuru') ||
+            county.name.toLowerCase().contains('naivasha')) {
+          region = 'Rift Valley Region';
+        } else if (county.name.toLowerCase().contains('kiambu') ||
+            county.name.toLowerCase().contains('thika')) {
+          region = 'Central Region';
+        } else if (county.name.toLowerCase().contains('kakamega') ||
+            county.name.toLowerCase().contains('bungoma')) {
+          region = 'Western Region';
+        } else if (county.name.toLowerCase().contains('machakos') ||
+            county.name.toLowerCase().contains('kitui')) {
+          region = 'Eastern Region';
+        } else {
+          region = 'Other Regions';
         }
       } catch (e) {
         print('Error getting region for county ${county.name}: $e');

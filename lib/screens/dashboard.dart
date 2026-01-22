@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import 'package:smartpay/config/counties.dart' show CountyConfig;
 import 'package:smartpay/model/county.dart' show County;
 import 'package:smartpay/screens/county_Settings.dart';
@@ -14,6 +15,7 @@ import 'package:smartpay/screens/settings_screen.dart';
 import 'package:smartpay/screens/notifications_screen.dart';
 import 'package:smartpay/screens/help_support_screen.dart';
 import 'package:smartpay/services/auth_service.dart' show AuthService;
+import 'package:smartpay/provider/county_theme_provider.dart';
 
 class Dashboard extends StatefulWidget {
   final String userId;
@@ -43,27 +45,27 @@ class _DashboardState extends State<Dashboard> {
   String _accountNumber = '';
   bool _isLoading = true;
   bool _hasValidMeterNumber = false;
-
+  
+  // County related variables
   late County _county;
+  String _currentCountyCode = '';
   Color _primaryColor = Colors.blueAccent;
   Color _secondaryColor = const Color(0xFF00C2FF);
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   StreamSubscription? _waterUsageSubscription;
+  StreamSubscription? _userCountySubscription;
+  StreamSubscription? _themeSubscription;
 
   @override
   void initState() {
     super.initState();
     print('📱 Dashboard initialized for user: ${widget.userId}');
-    print('📍 County Code: ${widget.countyCode}');
+    print('📍 Initial County Code: ${widget.countyCode}');
 
-    // Load county configuration
-    _county = CountyConfig.getCounty(widget.countyCode);
-    _primaryColor = Color(
-        int.parse(_county.theme['primaryColor'].replaceFirst('#', '0xFF')));
-    _secondaryColor = Color(
-        int.parse(_county.theme['secondaryColor'].replaceFirst('#', '0xFF')));
-
+    _currentCountyCode = widget.countyCode;
+    _loadCountyConfiguration(_currentCountyCode);
+    
     _hasValidMeterNumber = widget.meterNumber.isNotEmpty;
 
     if (_hasValidMeterNumber) {
@@ -71,6 +73,140 @@ class _DashboardState extends State<Dashboard> {
     } else {
       print('⚠️ No valid meter number provided');
       setState(() => _isLoading = false);
+    }
+    
+    // Setup listeners after widgets are mounted
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _setupCountyChangeListener();
+      _setupThemeListener();
+    });
+  }
+
+  void _loadCountyConfiguration(String countyCode) {
+    try {
+      _county = CountyConfig.getCounty(countyCode);
+      _primaryColor = Color(
+          int.parse(_county.theme['primaryColor'].replaceFirst('#', '0xFF')));
+      _secondaryColor = Color(
+          int.parse(_county.theme['secondaryColor'].replaceFirst('#', '0xFF')));
+      
+      print('✅ Loaded county: ${_county.name}');
+      print('   - Primary Color: $_primaryColor');
+      print('   - Water Rate: ${_county.waterRate}');
+      print('   - Water Provider: ${_county.waterProvider}');
+    } catch (e) {
+      print('❌ Error loading county configuration: $e');
+      // Fallback to default county
+      _county = CountyConfig.getCounty('nairobi');
+      _primaryColor = Colors.blueAccent;
+      _secondaryColor = const Color(0xFF00C2FF);
+    }
+  }
+
+  void _setupCountyChangeListener() {
+    print('🎯 Setting up county change listener...');
+    
+    _userCountySubscription = _firestore
+        .collection('users')
+        .doc(widget.userId)
+        .snapshots()
+        .listen((DocumentSnapshot snapshot) {
+      if (snapshot.exists) {
+        final data = snapshot.data() as Map<String, dynamic>;
+        final newCounty = data['county'] as String?;
+        
+        if (newCounty != null && newCounty != _currentCountyCode) {
+          print('🔄 County changed from $_currentCountyCode to $newCounty');
+          
+          // Update local county configuration
+          _currentCountyCode = newCounty;
+          _loadCountyConfiguration(newCounty);
+          
+          // Update county in waterUsage document
+          _updateWaterUsageCounty(newCounty);
+          
+          // Update theme provider if available
+          try {
+            final themeProvider = Provider.of<CountyThemeProvider>(context, listen: false);
+            themeProvider.updateCounty(newCounty);
+          } catch (e) {
+            print('⚠️ Could not update theme provider: $e');
+          }
+          
+          // Update payment methods based on new county
+          _updatePaymentMethods(newCounty);
+          
+          // Refresh UI
+          if (mounted) {
+            setState(() {});
+          }
+        }
+      }
+    }, onError: (error) {
+      print('❌ County change listener error: $error');
+    });
+  }
+
+  void _setupThemeListener() {
+    // Listen to theme changes from provider
+    try {
+      final themeProvider = Provider.of<CountyThemeProvider>(context, listen: false);
+      
+      // Check if countyStream exists
+      if (themeProvider.countyStream != null) {
+        _themeSubscription = themeProvider.countyStream!.listen((county) {
+          if (county.code != _currentCountyCode) {
+            print('🎨 Theme provider updated to: ${county.name}');
+            _currentCountyCode = county.code;
+            _loadCountyConfiguration(county.code);
+            
+            if (mounted) {
+              setState(() {});
+            }
+          }
+        });
+      } else {
+        print('⚠️ countyStream is null in themeProvider');
+      }
+    } catch (e) {
+      print('⚠️ Could not setup theme listener: $e');
+    }
+  }
+
+  Future<void> _updateWaterUsageCounty(String countyCode) async {
+    try {
+      final county = CountyConfig.getCounty(countyCode);
+      
+      await _firestore.collection('waterUsage').doc(widget.meterNumber).update({
+        'countyCode': countyCode,
+        'countyName': county.name,
+        'waterRate': county.waterRate,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+      
+      print('✅ Updated waterUsage county to: $countyCode');
+    } catch (e) {
+      print('❌ Error updating waterUsage county: $e');
+    }
+  }
+
+  void _updatePaymentMethods(String countyCode) {
+    try {
+      final county = CountyConfig.getCounty(countyCode);
+      final paymentMethods = county.paymentMethods;
+      
+      print('💳 Updated payment methods for ${county.name}:');
+      paymentMethods.forEach((key, value) {
+        if (value['enabled'] == true) {
+          print('   - ${value['name']}');
+        }
+      });
+      
+      // You can update any payment-related state here
+      // For example, update a payment provider in your app state
+      
+    } catch (e) {
+      print('❌ Error updating payment methods: $e');
     }
   }
 
@@ -105,12 +241,20 @@ class _DashboardState extends State<Dashboard> {
         _unitsConsumed = (waterData['unitsConsumed'] ?? 0.0).toDouble();
         _accountNumber = waterData['accountNumber'] ?? '';
 
+        // Update county if it's different
+        final countyCodeFromData = waterData['countyCode'] as String?;
+        if (countyCodeFromData != null && countyCodeFromData != _currentCountyCode) {
+          _currentCountyCode = countyCodeFromData;
+          _loadCountyConfiguration(countyCodeFromData);
+        }
+
         print('💧 Water Usage Data Updated:');
         print('   - Current Reading: $_currentReading L');
         print('   - Remaining Units: $_remainingUnits L');
         print('   - Total Purchased: $_totalPurchased L');
         print('   - Units Consumed: $_unitsConsumed L');
         print('   - Account Number: $_accountNumber');
+        print('   - County: $_currentCountyCode');
 
         _isLoading = false;
       });
@@ -137,7 +281,7 @@ class _DashboardState extends State<Dashboard> {
         'meterNumber': widget.meterNumber,
         'userId': widget.userId,
         'accountNumber': accountNumber,
-        'countyCode': widget.countyCode,
+        'countyCode': _currentCountyCode,
         'countyName': _county.name,
         'waterRate': _county.waterRate,
         'currentReading': 0.0,
@@ -175,7 +319,9 @@ class _DashboardState extends State<Dashboard> {
         'waterUsed': _unitsConsumed,
         'totalPurchased': _totalPurchased,
         'meterNumber': widget.meterNumber,
-        'countyCode': widget.countyCode,
+        'countyCode': _currentCountyCode,
+        'countyName': _county.name,
+        'waterRate': _county.waterRate,
         'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -227,6 +373,8 @@ class _DashboardState extends State<Dashboard> {
   @override
   void dispose() {
     _waterUsageSubscription?.cancel();
+    _userCountySubscription?.cancel();
+    _themeSubscription?.cancel();
     super.dispose();
   }
 
@@ -278,7 +426,7 @@ class _DashboardState extends State<Dashboard> {
                           PayBillScreen(
                             meterNumber: widget.meterNumber,
                             userId: widget.userId,
-                            countyCode: widget.countyCode,
+                            countyCode: _currentCountyCode,
                           ),
                         );
                       },

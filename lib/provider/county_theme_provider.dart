@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smartpay/config/counties.dart';
@@ -6,6 +7,8 @@ import 'package:smartpay/model/county.dart' show County;
 class CountyThemeProvider extends ChangeNotifier {
   late County _county;
   late ThemeData _theme;
+  final StreamController<County> _countyController =
+      StreamController<County>.broadcast();
 
   CountyThemeProvider(String countyCode) {
     try {
@@ -21,10 +24,12 @@ class CountyThemeProvider extends ChangeNotifier {
   ThemeData get theme => _theme;
   County get county => _county;
 
+  Stream<County>? get countyStream => _countyController.stream;
+
   // Safe color getters with fallback values
   Color get primaryColor {
     try {
-      final colorString = _county.theme?['primaryColor'] ?? '#2196F3';
+      final colorString = _county.theme['primaryColor'] ?? '#2196F3';
       return _parseColor(colorString);
     } catch (e) {
       return Colors.blue; // Fallback color
@@ -33,7 +38,7 @@ class CountyThemeProvider extends ChangeNotifier {
 
   Color get secondaryColor {
     try {
-      final colorString = _county.theme?['secondaryColor'] ?? '#4CAF50';
+      final colorString = _county.theme['secondaryColor'] ?? '#4CAF50';
       return _parseColor(colorString);
     } catch (e) {
       return Colors.green; // Fallback color
@@ -42,7 +47,7 @@ class CountyThemeProvider extends ChangeNotifier {
 
   Color get accentColor {
     try {
-      final colorString = _county.theme?['accentColor'] ?? '#FF9800';
+      final colorString = _county.theme['accentColor'] ?? '#FF9800';
       return _parseColor(colorString);
     } catch (e) {
       return Colors.orange; // Fallback color
@@ -173,17 +178,28 @@ class CountyThemeProvider extends ChangeNotifier {
 
   Future<void> updateCounty(String countyCode) async {
     try {
-      _county = CountyConfig.getCounty(countyCode);
+      final newCounty = CountyConfig.getCounty(countyCode);
+      _county = newCounty;
       _theme = _buildTheme();
+
+      // Add to stream for listeners
+      _countyController.add(newCounty);
 
       // Save to preferences
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('user_county', countyCode);
 
       notifyListeners();
+      print('🎯 Theme provider updated to: ${newCounty.name}');
     } catch (e) {
-      print('Error updating county: $e');
+      print('❌ Error updating county theme: $e');
       // Keep current county on error
     }
+  }
+
+  @override
+  void dispose() {
+    _countyController.close();
+    super.dispose();
   }
 }

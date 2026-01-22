@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:smartpay/config/counties.dart' show CountyConfig;
+import 'package:smartpay/model/county.dart' show County;
 
 class ProfileScreen extends StatefulWidget {
   final String userId;
@@ -38,11 +40,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _locationController = TextEditingController();
 
+  // County related variables
+  String? _selectedCounty;
+  List<County> _counties = [];
+  Map<String, County> _countiesMap = {};
+
   @override
   void initState() {
     super.initState();
     _currentUser = _auth.currentUser!;
+    _loadCounties();
     _initializeData();
+  }
+
+  void _loadCounties() {
+    // Load all counties from CountyConfig
+    _counties = CountyConfig.getAllCounties();
+    _countiesMap = {};
+    for (var county in _counties) {
+      _countiesMap[county.code] = county;
+    }
   }
 
   Future<void> _initializeData() async {
@@ -64,6 +81,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       if (userDoc.exists) {
         _userData = userDoc.data() as Map<String, dynamic>;
+
+        // Set selected county
+        _selectedCounty = _userData['county'];
 
         // Get account details
         DocumentSnapshot accountDoc = await _firestore
@@ -112,6 +132,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
+    if (_selectedCounty == null) {
+      _showErrorDialog('Please select your county');
+      return;
+    }
+
     try {
       setState(() {
         _isLoading = true;
@@ -123,6 +148,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'idNumber': _idNumberController.text.trim(),
         'address': _addressController.text.trim(),
         'location': _locationController.text.trim(),
+        'county': _selectedCounty,
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
@@ -145,8 +171,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'idNumber': updatedData['idNumber'],
         'address': updatedData['address'],
         'location': updatedData['location'],
+        'county': updatedData['county'],
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // Update county_details collection
+      await _updateCountyDetails(updatedData);
 
       print('✅ All collections updated successfully');
 
@@ -193,6 +223,59 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _updateCountyDetails(Map<String, dynamic> userData) async {
+    try {
+      final county = _countiesMap[_selectedCounty!];
+      if (county == null) return;
+
+      // Create or update county_details document
+      // Structure: county_details/{countyCode}/users/{userId}
+      final countyDetailsRef = _firestore
+          .collection('county_details')
+          .doc(_selectedCounty)
+          .collection('users')
+          .doc(widget.userId);
+
+      final countyUserData = {
+        'userId': widget.userId,
+        'name': userData['name'],
+        'email': widget.userEmail,
+        'meterNumber': widget.meterNumber,
+        'phone': userData['phone'],
+        'idNumber': userData['idNumber'],
+        'address': userData['address'],
+        'location': userData['location'],
+        'accountNumber': _userData['accountNumber'] ?? 'Not assigned',
+        'county': _selectedCounty,
+        'countyName': county.name,
+        'joinedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      await countyDetailsRef.set(countyUserData, SetOptions(merge: true));
+
+      // Also update the county summary document
+      final countySummaryRef =
+          _firestore.collection('county_details').doc(_selectedCounty);
+
+      // Get current count
+      final usersSnapshot =
+          await countySummaryRef.collection('users').count().get();
+
+      await countySummaryRef.set({
+        'countyName': county.name,
+        'totalUsers': usersSnapshot.count,
+        'waterRate': county.waterRate,
+        'waterProvider': county.waterProvider,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      print('✅ County details updated successfully');
+    } catch (e) {
+      print('❌ Error updating county details: $e');
+    }
+  }
+
   void _toggleEditMode() {
     setState(() {
       _isEditing = !_isEditing;
@@ -206,10 +289,226 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _idNumberController.text = _userData['idNumber'] ?? '';
     _addressController.text = _userData['address'] ?? '';
     _locationController.text = _userData['location'] ?? '';
+    _selectedCounty = _userData['county'];
 
     setState(() {
       _isEditing = false;
     });
+  }
+
+  void _showCountySelector() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.8,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                ),
+              ),
+              child: Column(
+                children: [
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Select Your County',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+
+                  // Search Bar
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: TextField(
+                      decoration: InputDecoration(
+                        hintText: 'Search counties...',
+                        prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onChanged: (value) {
+                        // Implement search functionality if needed
+                      },
+                    ),
+                  ),
+
+                  // Counties List
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(8),
+                      itemCount: _counties.length,
+                      itemBuilder: (context, index) {
+                        final county = _counties[index];
+                        final isSelected = _selectedCounty == county.code;
+                        final primaryColor =
+                            _getPrimaryColorForCounty(county.code);
+
+                        return ListTile(
+                          leading: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              color: primaryColor.withOpacity(0.1),
+                              image: county.countyLogo.isNotEmpty
+                                  ? DecorationImage(
+                                      image: AssetImage(county.countyLogo),
+                                      fit: BoxFit.cover,
+                                    )
+                                  : null,
+                            ),
+                            child: county.countyLogo.isEmpty
+                                ? Icon(
+                                    Icons.location_city,
+                                    color: primaryColor,
+                                  )
+                                : null,
+                          ),
+                          title: Text(
+                            county.name,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: primaryColor,
+                            ),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 4),
+                              Text(
+                                county.waterProvider,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(Icons.attach_money,
+                                      size: 12, color: Colors.green),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'KES ${county.waterRate.toStringAsFixed(2)}/litre',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          trailing: isSelected
+                              ? Icon(Icons.check_circle, color: primaryColor)
+                              : null,
+                          onTap: () {
+                            setState(() {
+                              _selectedCounty = county.code;
+                            });
+                            Future.delayed(const Duration(milliseconds: 300),
+                                () {
+                              Navigator.pop(context);
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+
+                  // Current Selection
+                  if (_selectedCounty != null &&
+                      _countiesMap.containsKey(_selectedCounty))
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: _getPrimaryColorForCounty(_selectedCounty!)
+                            .withOpacity(0.1),
+                        border: Border(
+                          top: BorderSide(
+                            color: Colors.grey.shade300,
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              color: _getPrimaryColorForCounty(_selectedCounty!)
+                                  .withOpacity(0.2),
+                            ),
+                            child: Center(
+                              child: Icon(
+                                Icons.check_circle,
+                                color:
+                                    _getPrimaryColorForCounty(_selectedCounty!),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Selected: ${_countiesMap[_selectedCounty]!.name}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: _getPrimaryColorForCounty(
+                                        _selectedCounty!),
+                                  ),
+                                ),
+                                Text(
+                                  'Water Rate: KES ${_countiesMap[_selectedCounty]!.waterRate.toStringAsFixed(2)}/litre',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Color _getPrimaryColorForCounty(String countyCode) {
+    try {
+      final county = CountyConfig.getCounty(countyCode);
+      final colorString = county.theme['primaryColor']?.toString() ?? '#2196F3';
+      return Color(
+        int.parse(colorString.replaceFirst('#', '0xFF')),
+      );
+    } catch (e) {
+      return Colors.blueAccent;
+    }
   }
 
   void _showErrorDialog(String message) {
@@ -349,6 +648,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   // Editable Form Fields
                   _buildEditableForm(),
 
+                  // County Selection
+                  if (_isEditing) ...[
+                    const SizedBox(height: 16),
+                    _buildCountySelection(),
+                  ],
+
                   const SizedBox(height: 24),
 
                   // Action Buttons when editing
@@ -361,6 +666,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildProfileHeader() {
     final accountNumber = _userData['accountNumber'] ?? 'Not assigned';
+    final countyName =
+        _selectedCounty != null && _countiesMap.containsKey(_selectedCounty)
+            ? _countiesMap[_selectedCounty]!.name
+            : 'County not set';
 
     return Column(
       children: [
@@ -416,8 +725,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          alignment: WrapAlignment.center,
           children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -434,7 +745,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
@@ -450,6 +760,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
             ),
+            if (_selectedCounty != null &&
+                _countiesMap.containsKey(_selectedCounty))
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _getPrimaryColorForCounty(_selectedCounty!)
+                      .withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  countyName,
+                  style: TextStyle(
+                    color: _getPrimaryColorForCounty(_selectedCounty!),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
           ],
         ),
         const SizedBox(height: 16),
@@ -490,6 +819,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final accountNumber = _userData['accountNumber'] ?? 'Not assigned';
     final meterNumber = _userData['meterNumber'] ?? widget.meterNumber;
     final idNumber = _userData['idNumber'] ?? 'Not set';
+    final countyName =
+        _selectedCounty != null && _countiesMap.containsKey(_selectedCounty)
+            ? _countiesMap[_selectedCounty]!.name
+            : 'Not set';
     final createdAt = _userData['createdAt'] != null
         ? (_userData['createdAt'] as Timestamp).toDate()
         : DateTime.now();
@@ -525,11 +858,136 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 12),
           _buildInfoRow('ID Number', idNumber, Icons.badge),
           const SizedBox(height: 12),
+          _buildInfoRow('County', countyName, Icons.location_city),
+          const SizedBox(height: 12),
           _buildInfoRow(
               'Member Since',
               '${createdAt.day}/${createdAt.month}/${createdAt.year}',
               Icons.calendar_today),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCountySelection() {
+    final currentCounty =
+        _selectedCounty != null && _countiesMap.containsKey(_selectedCounty)
+            ? _countiesMap[_selectedCounty]!
+            : null;
+    final primaryColor = currentCounty != null
+        ? _getPrimaryColorForCounty(currentCounty.code)
+        : Colors.grey;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey[200]!),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.location_city, color: primaryColor, size: 22),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'County *',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  InkWell(
+                    onTap: _showCountySelector,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[300]!),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              currentCounty?.name ?? 'Select your county',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: currentCounty != null
+                                    ? Colors.black87
+                                    : Colors.grey[400],
+                                fontStyle: currentCounty == null
+                                    ? FontStyle.italic
+                                    : FontStyle.normal,
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_drop_down,
+                              color: Colors.grey[600],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (currentCounty != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: primaryColor.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.water_drop, size: 16, color: primaryColor),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Water Rate: KES ${currentCounty.waterRate.toStringAsFixed(2)}/litre',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: primaryColor,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            currentCounty.waterProvider,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
