@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smartpay/model/county.dart' show County;
 import 'package:smartpay/services/county_payment_factory.dart';
 import 'package:smartpay/config/counties.dart';
+import '../services/nairobi_mpesa_service.dart';
 
 class PayBillScreen extends StatefulWidget {
   final String meterNumber;
@@ -274,7 +275,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
                 _buildTextField(
                   label: 'Phone Number',
                   controller: phoneController,
-                  hintText: '07XXXXXXXX or 254XXXXXXXXX',
+                  hintText: 'e.g., 07XXXXXXXX, 01XXXXXXXX, or 254XXXXXXXXX',
                   icon: Icons.phone_android_outlined,
                   keyboardType: TextInputType.phone,
                 ),
@@ -857,7 +858,18 @@ class _PayBillScreenState extends State<PayBillScreen> {
   bool _isPhoneValid() {
     final phone = phoneController.text.trim();
     if (phone.isEmpty) return false;
-    return _paymentService.isValidPhone(phone);
+
+    // Basic validation - allow any 10-13 digit number starting with 0, 1, 7, or +254
+    final cleaned = phone.replaceAll(RegExp(r'\s+'), '');
+
+    // Check if it's a valid phone number format
+    if (_paymentService.isValidPhone(phone)) {
+      return true;
+    }
+
+    // Additional flexible validation for user convenience
+    final phoneRegex = RegExp(r'^(\+?254|0)?[17][0-9]{8,9}$');
+    return phoneRegex.hasMatch(cleaned);
   }
 
   bool _isAmountValid() {
