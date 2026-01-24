@@ -71,7 +71,7 @@ class HelpSupportScreen extends StatelessWidget {
             _buildContactOption(
               icon: Icons.phone_outlined,
               title: 'Phone Support',
-              subtitle: '0704 129 034',
+              subtitle: '0795 195 136',
               color: Colors.blue,
               onTap: () => _makePhoneCall(context),
             ),
@@ -325,7 +325,7 @@ class HelpSupportScreen extends StatelessWidget {
   }
 
   Future<void> _openWhatsApp(BuildContext context) async {
-    const whatsappUrl = "https://wa.me/254704129034";
+    const whatsappUrl = "https://wa.me/254795195136";
 
     try {
       if (await canLaunchUrl(Uri.parse(whatsappUrl))) {

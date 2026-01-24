@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smartpay/model/county.dart' show County;
 import 'package:smartpay/services/county_payment_factory.dart';
 import 'package:smartpay/config/counties.dart';
-import '../services/nairobi_mpesa_service.dart';
 
 class PayBillScreen extends StatefulWidget {
   final String meterNumber;

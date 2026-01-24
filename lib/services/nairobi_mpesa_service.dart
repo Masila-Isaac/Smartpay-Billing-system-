@@ -302,7 +302,7 @@ class NairobiMpesaService implements CountyPaymentService {
 
     return query.snapshots().map((snapshot) {
       return snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
+        final data = doc.data();
         return {
           'id': doc.id,
           'user_name': data['user_info']?['name'] ?? 'Unknown',
