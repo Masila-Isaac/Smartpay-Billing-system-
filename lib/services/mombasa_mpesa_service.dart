@@ -5,10 +5,10 @@ import 'package:smartpay/model/county.dart';
 import 'package:smartpay/services/county_payment_factory.dart';
 
 class MombasaMpesaService implements CountyPaymentService {
-  final String _apiKey = 'YOUR_NAIROBI_MPESA_API_KEY';
-  final String _apiSecret = 'YOUR_NAIROBI_MPESA_API_SECRET';
-  final String _paybillNumber = '123456';
-  final String _callbackUrl = 'https://api.smartpay.co.ke/callbacks/nairobi';
+  final String _baseUrl = 'https://smartpay-billing.onrender.com';
+  final String _paybillNumber =
+      '174379'; // This should likely be Mombasa-specific
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   @override
   Future<Map<String, dynamic>> initiatePayment({
@@ -19,8 +19,13 @@ class MombasaMpesaService implements CountyPaymentService {
     required County county,
   }) async {
     try {
-      // Format phone for Mombasa (remove leading 0, add 254)
+      // Format phone for Mombasa
       final formattedPhone = _formatMombasaPhone(phone);
+
+      // Validate phone number
+      if (!isValidPhone(formattedPhone)) {
+        throw Exception('Invalid Mombasa phone number format');
+      }
 
       // Calculate litres based on Mombasa water rate
       final litres = county.calculateLitres(amount);
@@ -29,25 +34,24 @@ class MombasaMpesaService implements CountyPaymentService {
       final transactionRef =
           'MOM${DateTime.now().millisecondsSinceEpoch}${meterNumber.substring(meterNumber.length - 4)}';
 
+      // Generate password for M-Pesa API
+      final password = _generatePassword(county);
+
       // Call Mombasa County M-Pesa API
       final response = await http.post(
-        Uri.parse('https://api.mombasa.go.ke/mpesa/v1/stkpush'),
-        headers: {
-          'Authorization': 'Bearer $_apiKey',
-          'Content-Type': 'application/json',
-          'X-County': 'Mombasa',
-        },
+        Uri.parse('$_baseUrl/mpesa/stkpush'),
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'BusinessShortCode': _paybillNumber,
-          'Password': _generatePassword(county),
-          'Timestamp': DateTime.now().toUtc().toIso8601String(),
+          'Password': password,
+          'Timestamp': _generateTimestamp(),
           'TransactionType': 'CustomerPayBillOnline',
           'Amount': amount,
           'PartyA': formattedPhone,
           'PartyB': _paybillNumber,
           'PhoneNumber': formattedPhone,
-          'CallBackURL': _callbackUrl,
-          'AccountReference': 'MOMBASAWATER$meterNumber',
+          'CallBackURL': _getCallbackUrl(),
+          'AccountReference': _getAccountReference(meterNumber),
           'TransactionDesc': 'Mombasa Water Payment',
           'CountyMetadata': {
             'county_code': county.code,
@@ -60,6 +64,11 @@ class MombasaMpesaService implements CountyPaymentService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+
+        // Check if M-Pesa API returned success
+        if (data['ResponseCode'] != '0') {
+          throw Exception('M-Pesa API error: ${data['ResponseDescription']}');
+        }
 
         // Save transaction to Firestore
         await _saveTransaction(
@@ -74,7 +83,8 @@ class MombasaMpesaService implements CountyPaymentService {
         );
 
         return {
-          'status': data['ResponseCode'] == '0' ? 'pending' : 'failed',
+          'status': 'pending', // M-Pesa STK Push is pending user confirmation
+          'success': true,
           'reference': transactionRef,
           'mpesa_ref': data['CheckoutRequestID'],
           'message': 'M-Pesa STK Push sent to $formattedPhone',
@@ -83,7 +93,8 @@ class MombasaMpesaService implements CountyPaymentService {
           'water_rate': county.waterRate,
         };
       } else {
-        throw Exception('Mombasa M-Pesa API error: ${response.statusCode}');
+        throw Exception(
+            'Mombasa M-Pesa API error: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
       throw Exception('Mombasa payment error: $e');
@@ -102,7 +113,7 @@ class MombasaMpesaService implements CountyPaymentService {
   }) async {
     final firestore = FirebaseFirestore.instance;
 
-    await firestore.collection('transactions').doc(transactionRef).set({
+    final transactionData = {
       'transaction_id': transactionRef,
       'user_id': userId,
       'meter_number': meterNumber,
@@ -114,7 +125,7 @@ class MombasaMpesaService implements CountyPaymentService {
       'phone': phone,
       'payment_method': 'mpesa',
       'payment_gateway': county.paymentGateway,
-      'paybill_number': county.paybillNumber,
+      'paybill_number': county.paybillNumber ?? _paybillNumber,
       'status': 'pending',
       'mpesa_checkout_id': mpesaResponse['CheckoutRequestID'],
       'created_at': FieldValue.serverTimestamp(),
@@ -124,7 +135,13 @@ class MombasaMpesaService implements CountyPaymentService {
         'customer_care': county.customerCare,
         'api_response': mpesaResponse,
       },
-    });
+    };
+
+    // Save to main transactions collection
+    await firestore
+        .collection('transactions')
+        .doc(transactionRef)
+        .set(transactionData);
 
     // Also save to user's transaction history
     await firestore
@@ -142,66 +159,57 @@ class MombasaMpesaService implements CountyPaymentService {
     });
   }
 
-  String _generatePassword(dynamic county) {
-    final timestamp = DateTime.now().toUtc();
-    final formattedTimestamp = timestamp
-        .toIso8601String()
-        .replaceAll('-', '')
-        .replaceAll(':', '')
-        .replaceAll('.', '');
+  String _generatePassword(County county) {
+    // M-Pesa STK Push password generation format: base64(BusinessShortCode + Passkey + Timestamp)
+    final timestamp = _generateTimestamp();
+    final passkey = county.passkey; // You need to get this from County model
+    final data = '${county.paybillNumber ?? _paybillNumber}$passkey$timestamp';
+    return base64.encode(utf8.encode(data));
+  }
 
-    final password = base64.encode(
-      utf8.encode('$_paybillNumber${county.paybillNumber}$formattedTimestamp'),
-    );
+  String _generateTimestamp() {
+    // Format: YYYYMMDDHHMMSS
+    final now = DateTime.now().toUtc();
+    return '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
+        '${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+  }
 
-    return password;
+  String _getCallbackUrl() {
+    // This should be your callback URL for M-Pesa to send payment confirmation
+    // Update this with your actual backend URL
+    return 'https://smartpay-billing.onrender.com/api/mpesa-callback';
+    // Or if you have a different callback endpoint:
+    // return '$_baseUrl/mpesa/callback';
+  }
+
+  String _getAccountReference(String meterNumber) {
+    return 'MOMBASAWATER${meterNumber.substring(meterNumber.length - 6)}';
   }
 
   @override
   Future<bool> testConnection() async {
     try {
       final response = await http.get(
-        Uri.parse('https://api.nairobi.go.ke/mpesa/v1/status'),
-        headers: {
-          'Authorization': 'Bearer $_apiKey',
-          'X-County': 'Nairobi',
-        },
+        Uri.parse('$_baseUrl/health'),
+        headers: {'Accept': 'application/json'},
       );
-      return response.statusCode == 200;
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['status'] == 'healthy';
+      }
+      return false;
     } catch (e) {
+      print('Connection test error: $e');
       return false;
     }
   }
 
   @override
   bool isValidPhone(String phone) {
-    // Nairobi phone validation (2547XXXXXXXX or 07XXXXXXXX)
+    // Mombasa uses same Kenyan phone format
     final regex = RegExp(r'^(254|0)[7-9][0-9]{8}$');
     return regex.hasMatch(phone.replaceAll(RegExp(r'\s+'), ''));
-  }
-
-  String _formatKisPhone(String phone) {
-    phone = phone.replaceAll(RegExp(r'\s+'), '');
-
-    if (phone.startsWith('0')) {
-      return '254${phone.substring(1)}';
-    } else if (phone.startsWith('254')) {
-      return phone;
-    } else {
-      return '2547${phone.substring(phone.length - 9)}';
-    }
-  }
-
-  String _formatNairobiPhone(String phone) {
-    phone = phone.replaceAll(RegExp(r'\s+'), '');
-
-    if (phone.startsWith('0')) {
-      return '254${phone.substring(1)}';
-    } else if (phone.startsWith('254')) {
-      return phone;
-    } else {
-      return '2547${phone.substring(phone.length - 9)}';
-    }
   }
 
   String _formatMombasaPhone(String phone) {
@@ -211,8 +219,10 @@ class MombasaMpesaService implements CountyPaymentService {
       return '254${phone.substring(1)}';
     } else if (phone.startsWith('254')) {
       return phone;
+    } else if (phone.length == 9 && phone.startsWith('7')) {
+      return '254$phone';
     } else {
-      return '2547${phone.substring(phone.length - 9)}';
+      throw Exception('Invalid phone number format for Mombasa');
     }
   }
 
@@ -220,8 +230,32 @@ class MombasaMpesaService implements CountyPaymentService {
   String getPaybillNumber() => _paybillNumber;
 
   @override
-  String getTillNumber() => '';
+  String getTillNumber() => ''; // Mombasa uses paybill, not till number
 
   @override
-  String getAccountPrefix() => 'NAIROBIWATER';
+  String getAccountPrefix() => 'MOMBASAWATER';
+
+  // Optional: Add method to check payment status
+  Future<Map<String, dynamic>> checkPaymentStatus(
+      String checkoutRequestId, County county) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/mpesa/query'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'BusinessShortCode': _paybillNumber,
+          'Password': _generatePassword(county),
+          'Timestamp': _generateTimestamp(),
+          'CheckoutRequestID': checkoutRequestId,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      throw Exception('Failed to query payment status');
+    } catch (e) {
+      throw Exception('Payment status check error: $e');
+    }
+  }
 }

@@ -10,6 +10,7 @@ class County {
   final Map<String, dynamic> paymentMethods;
   final String waterProvider;
   final String countyLogo;
+  final String passkey;
 
   const County({
     required this.code,
@@ -23,6 +24,7 @@ class County {
     required this.paymentMethods,
     required this.waterProvider,
     required this.countyLogo,
+    this.passkey = '',
   });
 
   factory County.fromJson(Map<String, dynamic> json) {
@@ -38,6 +40,7 @@ class County {
       paymentMethods: json['payment_methods'] ?? {},
       waterProvider: json['water_provider'] ?? '',
       countyLogo: json['county_logo'] ?? '',
+      passkey: json['passkey'] ?? '',
     );
   }
 
