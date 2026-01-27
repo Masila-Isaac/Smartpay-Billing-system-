@@ -131,7 +131,7 @@ function generateTimestampAndPassword() {
     return { timestamp, password };
 }
 
-// ========== DEBUG ENDPOINT (MUST BE BEFORE OTHER ROUTES) ==========
+//  DEBUG ENDPOINT (MUST BE BEFORE OTHER ROUTES)
 app.get("/debug", async (req, res) => {
     try {
         console.log("🔍 DEBUG ENDPOINT CALLED");
@@ -199,7 +199,7 @@ app.get("/debug", async (req, res) => {
     }
 });
 
-// ========== ROUTES ==========
+//ROUTES
 
 // Root endpoint
 app.get("/", (req, res) => {

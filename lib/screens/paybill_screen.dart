@@ -32,6 +32,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
   String? _paymentReference;
   String _paymentStatus = 'pending';
   double _litresPurchased = 0.0;
+  bool _redirecting = false;
 
   late County _county;
   late CountyPaymentService _paymentService;
@@ -47,24 +48,78 @@ class _PayBillScreenState extends State<PayBillScreen> {
   void initState() {
     super.initState();
 
-    // Load county configuration
-    _county = CountyConfig.getCounty(widget.countyCode);
-    _primaryColor = Color(
-        int.parse(_county.theme['primaryColor'].replaceFirst('#', '0xFF')));
-    _waterRate = _county.waterRate;
+    debugPrint('County code received: ${widget.countyCode}');
+
+    try {
+      // Try to load county
+      final loadedCounty = CountyConfig.getCounty(widget.countyCode);
+      if (loadedCounty != null) {
+        _county = loadedCounty;
+
+        // Safely parse color
+        try {
+          if (_county.theme != null &&
+              _county.theme['primaryColor'] != null &&
+              _county.theme['primaryColor'] is String) {
+            final colorStr = _county.theme['primaryColor'] as String;
+            _primaryColor =
+                Color(int.parse(colorStr.replaceFirst('#', '0xFF')));
+          } else {
+            _primaryColor = Colors.blueAccent;
+          }
+        } catch (e) {
+          debugPrint('Error parsing color: $e');
+          _primaryColor = Colors.blueAccent;
+        }
+
+        _waterRate = _county.waterRate ?? 1.0;
+        _paybillNumber = _county.paybillNumber ?? '';
+        _tillNumber = _county.tillNumber ?? '';
+
+        debugPrint('County loaded: ${_county.name}');
+        debugPrint('Water rate: $_waterRate');
+      } else {
+        debugPrint('County not found for code: ${widget.countyCode}');
+        throw Exception('County not found');
+      }
+    } catch (e) {
+      // Use defaults
+      debugPrint('Using default county configuration: $e');
+      _county = County(
+        code: widget.countyCode,
+        name: 'Water Service',
+        waterProvider: 'Local Provider',
+        paybillNumber: '123456',
+        tillNumber: '123456',
+        waterRate: 1.0,
+        customerCare: '0700 000 000',
+        countyLogo: 'assets/county/default.png',
+        theme: {'primaryColor': '#1E88E5'},
+        enabled: true,
+        paymentGateway: '',
+        paymentMethods: {},
+      );
+      _primaryColor = Colors.blueAccent;
+      _waterRate = 1.0;
+      _paybillNumber = '123456';
+      _tillNumber = '123456';
+    }
 
     // Load payment methods
-    _paymentMethods =
-        CountyPaymentFactory.getEnabledPaymentMethods(widget.countyCode);
-    _selectedPaymentMethod =
-        _paymentMethods.isNotEmpty ? _paymentMethods.first['id'] : '';
+    try {
+      _paymentMethods =
+          CountyPaymentFactory.getEnabledPaymentMethods(widget.countyCode) ??
+              [];
+      _selectedPaymentMethod =
+          _paymentMethods.isNotEmpty ? _paymentMethods.first['id'] : '';
+    } catch (e) {
+      debugPrint('Error loading payment methods: $e');
+      _paymentMethods = [];
+      _selectedPaymentMethod = '';
+    }
 
     // Initialize payment service
     _updatePaymentService();
-
-    // Set paybill and till numbers
-    _paybillNumber = _county.paybillNumber;
-    _tillNumber = _county.tillNumber;
 
     _initializeForm();
     _testServerConnection();
@@ -78,10 +133,16 @@ class _PayBillScreenState extends State<PayBillScreen> {
   }
 
   void _updatePaymentService() {
-    _paymentService = CountyPaymentFactory.getService(
-      widget.countyCode,
-      _selectedPaymentMethod,
-    );
+    try {
+      _paymentService = CountyPaymentFactory.getService(
+        widget.countyCode,
+        _selectedPaymentMethod,
+      );
+    } catch (e) {
+      debugPrint('Error creating payment service: $e');
+      // Create a mock service or handle appropriately
+      throw Exception('Unable to initialize payment service: $e');
+    }
   }
 
   Future<void> _loadUserPhoneNumber() async {
@@ -94,8 +155,9 @@ class _PayBillScreenState extends State<PayBillScreen> {
           .doc(user.uid)
           .get();
 
-      if (userDoc.exists) {
-        final phone = userDoc.data()?['phone']?.toString() ?? '';
+      if (userDoc.exists && userDoc.data() != null) {
+        final data = userDoc.data()!;
+        final phone = data['phone']?.toString() ?? '';
         if (phone.isNotEmpty) {
           phoneController.text = phone;
         }
@@ -150,7 +212,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
         elevation: 0.5,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: _primaryColor),
-          onPressed: () => Navigator.pop(context),
+          onPressed: _navigateBack,
         ),
       ),
       backgroundColor: Colors.white,
@@ -240,7 +302,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
             ),
 
           // Payment Method Selector
-          _buildPaymentMethodSelector(),
+          if (_paymentMethods.isNotEmpty) _buildPaymentMethodSelector(),
 
           const SizedBox(height: 16),
 
@@ -400,19 +462,25 @@ class _PayBillScreenState extends State<PayBillScreen> {
                 height: 32,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(6),
-                  image: DecorationImage(
-                    image: AssetImage(_county.countyLogo),
-                    fit: BoxFit.cover,
-                    onError: (error, stackTrace) => Container(
-                      color: _primaryColor.withOpacity(0.1),
-                      child: Icon(
+                  color: _primaryColor.withOpacity(0.1),
+                  image: _county.countyLogo != null &&
+                          _county.countyLogo!.isNotEmpty
+                      ? DecorationImage(
+                          image: AssetImage(_county.countyLogo!),
+                          fit: BoxFit.cover,
+                          onError: (error, stackTrace) {
+                            // Error handled by container color
+                          },
+                        )
+                      : null,
+                ),
+                child: _county.countyLogo == null || _county.countyLogo!.isEmpty
+                    ? Icon(
                         Icons.location_city,
                         color: _primaryColor,
                         size: 16,
-                      ),
-                    ),
-                  ),
-                ),
+                      )
+                    : null,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -455,7 +523,9 @@ class _PayBillScreenState extends State<PayBillScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _paybillNumber,
+                      _paybillNumber.isNotEmpty
+                          ? _paybillNumber
+                          : 'Not Available',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
@@ -492,13 +562,13 @@ class _PayBillScreenState extends State<PayBillScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          if (_county.customerCare.isNotEmpty)
+          if (_county.customerCare != null && _county.customerCare!.isNotEmpty)
             Row(
               children: [
                 Icon(Icons.phone, size: 14, color: Colors.grey),
                 const SizedBox(width: 4),
                 Text(
-                  'Customer Care: ${_county.customerCare}',
+                  'Customer Care: ${_county.customerCare!}',
                   style: TextStyle(
                     color: Colors.grey[600],
                     fontSize: 12,
@@ -599,7 +669,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
 
                   // Update paybill if method-specific
                   if (method['paybill'] != null) {
-                    _paybillNumber = method['paybill'];
+                    _paybillNumber = method['paybill']!;
                   }
                 });
               },
@@ -622,18 +692,27 @@ class _PayBillScreenState extends State<PayBillScreen> {
                       width: 24,
                       height: 24,
                       decoration: BoxDecoration(
-                        image: DecorationImage(
-                          image: AssetImage(method['logo']),
-                          fit: BoxFit.contain,
-                          onError: (error, stackTrace) => Icon(Icons.payment,
-                              size: 20,
-                              color: isSelected ? _primaryColor : Colors.grey),
-                        ),
+                        image: method['logo'] != null
+                            ? DecorationImage(
+                                image: AssetImage(method['logo']!),
+                                fit: BoxFit.contain,
+                                onError: (error, stackTrace) {
+                                  // Error handled by icon
+                                },
+                              )
+                            : null,
                       ),
+                      child: method['logo'] == null
+                          ? Icon(
+                              Icons.payment,
+                              size: 20,
+                              color: isSelected ? _primaryColor : Colors.grey,
+                            )
+                          : null,
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      method['name'],
+                      method['name'] ?? 'Unknown',
                       style: TextStyle(
                         fontWeight:
                             isSelected ? FontWeight.w600 : FontWeight.normal,
@@ -654,6 +733,16 @@ class _PayBillScreenState extends State<PayBillScreen> {
     final isFailed = _paymentStatus == 'failed';
     final isPending = _paymentStatus == 'pending';
     final isSuccess = _paymentStatus == 'successful';
+
+    // Auto-redirect for successful payments
+    if (isSuccess && mounted && !_redirecting) {
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) {
+          _redirectToDashboard();
+        }
+      });
+      _redirecting = true;
+    }
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -761,7 +850,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
                 ? 'Please check your phone to complete the payment'
                 : isFailed
                     ? 'Please try again or contact support'
-                    : 'Your payment has been processed successfully',
+                    : 'Your payment has been processed successfully\nRedirecting to dashboard...',
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey[600],
@@ -769,41 +858,103 @@ class _PayBillScreenState extends State<PayBillScreen> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 32),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _resetForm,
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    side: BorderSide(color: _primaryColor),
-                  ),
-                  child: Text(
-                    'Make Another Payment',
-                    style: TextStyle(color: _primaryColor),
+
+          // Show different buttons based on payment status
+          if (isFailed)
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: () => _redirectToPaymentScreen(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _primaryColor,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.refresh, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'TRY AGAIN',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
-                  ),
-                  child: const Text('Back to Dashboard'),
+                  ],
                 ),
               ),
-            ],
-          ),
+            )
+          else if (isPending)
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _redirectToPaymentScreen(),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      side: BorderSide(color: _primaryColor),
+                    ),
+                    child: Text(
+                      'Make Another Payment',
+                      style: TextStyle(color: _primaryColor),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => _redirectToDashboard(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _primaryColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Go to Dashboard'),
+                  ),
+                ),
+              ],
+            )
+          else // Success - show countdown
+            Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: () => _redirectToDashboard(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'GO TO DASHBOARD NOW',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Automatically redirecting in 3 seconds...',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );
@@ -862,8 +1013,12 @@ class _PayBillScreenState extends State<PayBillScreen> {
     final cleaned = phone.replaceAll(RegExp(r'\s+'), '');
 
     // Check if it's a valid phone number format
-    if (_paymentService.isValidPhone(phone)) {
-      return true;
+    try {
+      if (_paymentService.isValidPhone(phone)) {
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Phone validation error: $e');
     }
 
     // Additional flexible validation for user convenience
@@ -880,6 +1035,17 @@ class _PayBillScreenState extends State<PayBillScreen> {
 
   Future<void> _handlePayment() async {
     FocusScope.of(context).unfocus();
+
+    // Check if county is loaded
+    try {
+      if (_county == null) {
+        _showErrorDialog('County configuration not loaded. Please try again.');
+        return;
+      }
+    } catch (e) {
+      _showErrorDialog('County information error. Please restart the app.');
+      return;
+    }
 
     final phone = phoneController.text.trim();
     final meterNumber = meterNumberController.text.trim();
@@ -908,8 +1074,16 @@ class _PayBillScreenState extends State<PayBillScreen> {
       return;
     }
 
-    if (!_paymentService.isValidPhone(phone)) {
-      _showErrorDialog('Please enter a valid phone number for ${_county.name}');
+    // Check phone validation
+    try {
+      if (!_paymentService.isValidPhone(phone)) {
+        _showErrorDialog(
+            'Please enter a valid phone number for ${_county.name}');
+        return;
+      }
+    } catch (e) {
+      _showErrorDialog(
+          'Phone validation error. Please check your phone number.');
       return;
     }
 
@@ -969,8 +1143,14 @@ class _PayBillScreenState extends State<PayBillScreen> {
         county: _county,
       );
 
+      // Check if result is valid
+      if (result == null) {
+        throw Exception('Payment service returned no result');
+      }
+
       // Update water usage after successful payment
-      if (result['status'] == 'pending' || result['status'] == 'successful') {
+      final status = result['status']?.toString() ?? 'pending';
+      if (status == 'pending' || status == 'successful') {
         try {
           await _updateWaterUsageAfterPayment(
             meterNumber: meterNumber,
@@ -986,8 +1166,8 @@ class _PayBillScreenState extends State<PayBillScreen> {
 
       setState(() {
         _paymentCompleted = true;
-        _paymentReference = result['reference'] ?? 'N/A';
-        _paymentStatus = result['status'] ?? 'pending';
+        _paymentReference = result['reference']?.toString() ?? 'N/A';
+        _paymentStatus = status;
         _litresPurchased = litres;
       });
 
@@ -995,21 +1175,92 @@ class _PayBillScreenState extends State<PayBillScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content:
-                Text(result['message'] ?? 'Payment request sent to your phone'),
+            content: Text(result['message']?.toString() ??
+                'Payment request sent to your phone'),
             backgroundColor: Colors.green,
           ),
         );
+      }
+
+      // Add a delay before redirecting (for user to see success message)
+      await Future.delayed(const Duration(seconds: 2));
+
+      // Redirect based on payment status
+      if (mounted) {
+        if (status == 'successful' || status == 'pending') {
+          // Successful or pending payment - redirect to dashboard
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted) {
+              _redirectToDashboard();
+            }
+          });
+        } else {
+          // Failed payment - redirect back to payment screen
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted) {
+              _redirectToPaymentScreen();
+            }
+          });
+        }
       }
     } catch (e) {
       debugPrint('Payment error: $e');
       if (mounted) {
         _showErrorDialog('Payment failed: ${e.toString()}');
+        // Redirect back to payment screen on error
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) {
+            _redirectToPaymentScreen();
+          }
+        });
       }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  void _redirectToDashboard() {
+    try {
+      // Clear any existing routes and go to dashboard
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/dashboard', // Replace with your dashboard route name
+        (route) => false,
+      );
+    } catch (e) {
+      debugPrint('Redirect to dashboard error: $e');
+      Navigator.pop(context); // Fallback to pop
+    }
+  }
+
+  void _redirectToPaymentScreen() {
+    // Go back to payment screen but keep the form data
+    setState(() {
+      _paymentCompleted = false;
+      _paymentStatus = 'pending';
+      _redirecting = false;
+    });
+  }
+
+  void _navigateBack() {
+    try {
+      // If payment is completed and successful/pending, go to dashboard
+      if (_paymentCompleted &&
+          (_paymentStatus == 'successful' || _paymentStatus == 'pending')) {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/dashboard',
+          (route) => false,
+        );
+      } else {
+        // Otherwise, go back normally
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      debugPrint('Navigate back error: $e');
+      Navigator.pop(context); // Fallback
     }
   }
 
@@ -1023,19 +1274,19 @@ class _PayBillScreenState extends State<PayBillScreen> {
     try {
       final firestore = FirebaseFirestore.instance;
 
-      print('💧 Updating water usage after payment');
-      print('• County: ${county.name}');
-      print('• User ID: $userId');
-      print('• Meter: $meterNumber');
-      print('• Litres Purchased: $litresPurchased');
-      print('• Amount: $amount');
+      debugPrint('💧 Updating water usage after payment');
+      debugPrint('• County: ${county.name}');
+      debugPrint('• User ID: $userId');
+      debugPrint('• Meter: $meterNumber');
+      debugPrint('• Litres Purchased: $litresPurchased');
+      debugPrint('• Amount: $amount');
 
       // Get current water usage data
       final waterUsageDoc =
           await firestore.collection('waterUsage').doc(meterNumber).get();
 
-      if (waterUsageDoc.exists) {
-        final currentData = waterUsageDoc.data() as Map<String, dynamic>;
+      if (waterUsageDoc.exists && waterUsageDoc.data() != null) {
+        final currentData = waterUsageDoc.data()!;
 
         // Calculate new values
         double currentReading =
@@ -1050,13 +1301,13 @@ class _PayBillScreenState extends State<PayBillScreen> {
         double newRemainingUnits = remainingUnits + litresPurchased;
         double newTotalPurchased = totalUnitsPurchased + litresPurchased;
 
-        print('📈 Updating water usage:');
-        print('   - Old currentReading: $currentReading');
-        print('   - Old remainingUnits: $remainingUnits');
-        print('   - Old totalPurchased: $totalUnitsPurchased');
-        print('   - New currentReading: $newCurrentReading');
-        print('   - New remainingUnits: $newRemainingUnits');
-        print('   - New totalPurchased: $newTotalPurchased');
+        debugPrint('📈 Updating water usage:');
+        debugPrint('   - Old currentReading: $currentReading');
+        debugPrint('   - Old remainingUnits: $remainingUnits');
+        debugPrint('   - Old totalPurchased: $totalUnitsPurchased');
+        debugPrint('   - New currentReading: $newCurrentReading');
+        debugPrint('   - New remainingUnits: $newRemainingUnits');
+        debugPrint('   - New totalPurchased: $newTotalPurchased');
 
         // Update waterUsage collection
         await firestore.collection('waterUsage').doc(meterNumber).update({
@@ -1087,7 +1338,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
           'lastUpdated': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
 
-        print('✅ Water usage updated successfully');
+        debugPrint('✅ Water usage updated successfully');
       } else {
         // Create new water usage document
         await firestore.collection('waterUsage').doc(meterNumber).set({
@@ -1107,10 +1358,10 @@ class _PayBillScreenState extends State<PayBillScreen> {
           'status': 'active',
         });
 
-        print('✅ New water usage document created');
+        debugPrint('✅ New water usage document created');
       }
     } catch (e) {
-      print('❌ Error updating water usage: $e');
+      debugPrint('❌ Error updating water usage: $e');
       throw Exception('Failed to update water usage: $e');
     }
   }

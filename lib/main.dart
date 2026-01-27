@@ -48,23 +48,64 @@ class MyApp extends StatelessWidget {
       home: const AuthChecker(),
       routes: {
         '/dashboard': (context) {
-          final args = ModalRoute.of(context)!.settings.arguments as Map;
-          return Dashboard(
-            userId: args['userId'],
-            meterNumber: args['meterNumber'],
-            userName: args['userName'],
-            userEmail: args['userEmail'],
-            countyCode: args['countyCode'],
-          );
+          // FIXED: Added null safety check
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args == null || args is! Map) {
+            // Return to login if no arguments
+            return const LoginScreen();
+          }
+
+          try {
+            return Dashboard(
+              userId: args['userId'] ?? '',
+              meterNumber: args['meterNumber'] ?? '',
+              userName: args['userName'] ?? '',
+              userEmail: args['userEmail'] ?? '',
+              countyCode: args['countyCode'] ?? '001',
+            );
+          } catch (e) {
+            // Fallback if arguments are invalid
+            return const LoginScreen();
+          }
         },
         '/county-selection': (context) {
-          final args = ModalRoute.of(context)!.settings.arguments as Map;
-          return CountySelectionScreen(
-            userId: args['userId'],
-            meterNumber: args['meterNumber'],
-            userName: args['userName'],
-            userEmail: args['userEmail'],
-          );
+          // FIXED: Added null safety check
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args == null || args is! Map) {
+            // Show error screen
+            return Scaffold(
+              body: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error, size: 64, color: Colors.red),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Invalid navigation',
+                      style: TextStyle(fontSize: 18),
+                    ),
+                    const SizedBox(height: 10),
+                    ElevatedButton(
+                      onPressed: () =>
+                          Navigator.pushReplacementNamed(context, '/login'),
+                      child: const Text('Go to Login'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          try {
+            return CountySelectionScreen(
+              userId: args['userId'] ?? '',
+              meterNumber: args['meterNumber'] ?? '',
+              userName: args['userName'] ?? '',
+              userEmail: args['userEmail'] ?? '',
+            );
+          } catch (e) {
+            return const LoginScreen();
+          }
         },
         '/login': (context) => const LoginScreen(),
         '/splash': (context) => const SplashScreen(),
@@ -118,25 +159,33 @@ class _AuthCheckerState extends State<AuthChecker> {
         }
 
         if (userSnap.hasData && userSnap.data!.exists) {
-          final userData = userSnap.data!.data() as Map<String, dynamic>;
-          final county = userData['county'];
-          final meterNumber = userData['meterNumber'] ?? '';
+          final userData = userSnap.data!.data() as Map<String, dynamic>?;
+
+          // FIXED: Added null check for userData
+          if (userData == null) {
+            return _buildErrorScreen('User data is null');
+          }
+
+          final county = userData['county'] as String?;
+          final meterNumber = userData['meterNumber'] as String? ?? '';
 
           if (county == null || county.isEmpty) {
             // Redirect to county selection
             return CountySelectionScreen(
               userId: user.uid,
               meterNumber: meterNumber,
-              userName: userData['name'] ?? user.displayName ?? 'User',
-              userEmail: userData['email'] ?? user.email ?? '',
+              userName:
+                  userData['name'] as String? ?? user.displayName ?? 'User',
+              userEmail: userData['email'] as String? ?? user.email ?? '',
             );
           } else {
             // Go to dashboard with county
             return Dashboard(
               userId: user.uid,
               meterNumber: meterNumber,
-              userName: userData['name'] ?? user.displayName ?? 'User',
-              userEmail: userData['email'] ?? user.email ?? '',
+              userName:
+                  userData['name'] as String? ?? user.displayName ?? 'User',
+              userEmail: userData['email'] as String? ?? user.email ?? '',
               countyCode: county,
             );
           }

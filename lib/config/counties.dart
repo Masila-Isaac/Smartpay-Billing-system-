@@ -25,6 +25,8 @@ class CountyConfig {
           'paybill': '123456',
         },
       },
+      enabled: true, // CHANGED from `null` to `true`
+      passkey: '', // Added required passkey parameter
     ),
     '002': County(
       code: '002',
@@ -49,12 +51,44 @@ class CountyConfig {
           'paybill': '234567',
         },
       },
+      enabled: true, // CHANGED from `null` to `true`
+      passkey: '', // Added required passkey parameter
     ),
     // Add more counties as needed
   };
 
   static County getCounty(String code) {
-    return counties[code] ?? counties['001']!;
+    final county = counties[code];
+    if (county == null) {
+      // Return a default county if not found
+      return County(
+        code: code,
+        name: 'Default County',
+        paymentGateway: 'default_gateway',
+        paybillNumber: '000000',
+        tillNumber: '0000000',
+        customerCare: '0700 000 000',
+        waterRate: 1.0,
+        waterProvider: 'Default Water Provider',
+        countyLogo: 'assets/images/default.png',
+        theme: {
+          'primaryColor': '#1E88E5',
+          'secondaryColor': '#FF5722',
+        },
+        paymentMethods: {
+          'mpesa': {
+            'enabled': true,
+            'name': 'M-Pesa',
+            'logo': 'assets/images/mpesa.png',
+            'service': 'DefaultMpesaService',
+            'paybill': '000000',
+          },
+        },
+        enabled: true,
+        passkey: '',
+      );
+    }
+    return county;
   }
 
   static List<County> getAllCounties() {
@@ -68,7 +102,12 @@ class CountyConfig {
               'name': county.name,
               'waterRate': county.waterRate,
               'waterProvider': county.waterProvider,
+              'enabled': county.enabled,
             })
         .toList();
+  }
+
+  static List<County> getEnabledCounties() {
+    return counties.values.where((county) => county.enabled).toList();
   }
 }
