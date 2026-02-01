@@ -15,11 +15,15 @@ abstract class CountyPaymentService {
 
   Future<bool> testConnection();
   bool isValidPhone(String phone);
+
+  Future checkPaymentStatus(String s) async {}
 }
 
 class CountyPaymentFactory {
   static CountyPaymentService getService(
-      String countyCode, String paymentMethod) {
+    String countyCode,
+    String paymentMethod,
+  ) {
     final county = CountyConfig.getCounty(countyCode);
 
     switch (paymentMethod) {
@@ -44,7 +48,8 @@ class CountyPaymentFactory {
   }
 
   static List<Map<String, dynamic>> getEnabledPaymentMethods(
-      String countyCode) {
+    String countyCode,
+  ) {
     final county = CountyConfig.getCounty(countyCode);
     final methods = <Map<String, dynamic>>[];
 
