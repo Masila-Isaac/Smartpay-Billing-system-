@@ -17,7 +17,7 @@ exports.syncRtdbToFirestore = functions.database
         }
 
         try {
-            // ✅ STEP 1: Directly read the account document
+            // Directly read the account document
             const accountRef = firestore
                 .collection("account_details")
                 .doc(userId);
@@ -36,7 +36,7 @@ exports.syncRtdbToFirestore = functions.database
                 return null;
             }
 
-            // ✅ STEP 2: Save RTDB data into Firestore
+            // save RTDB data into Firestore
             await firestore
                 .collection("microcontroller_data")
                 .doc(meterNumber)

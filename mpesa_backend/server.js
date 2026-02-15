@@ -5,13 +5,13 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const admin = require("firebase-admin");
 
-// ========== ENVIRONMENT CHECK ==========
+//   ENVIRONMENT CHECK  
 console.log("🔧 Environment Check:");
 console.log("PORT:", process.env.PORT);
 console.log("MPESA_CONSUMER_KEY exists:", !!process.env.MPESA_CONSUMER_KEY);
 console.log("FIREBASE_PROJECT_ID exists:", !!process.env.FIREBASE_PROJECT_ID);
 
-// ========== FIREBASE INITIALIZATION ==========
+//   FIREBASE INITIALIZATION  
 let db;
 try {
     const serviceAccount = {
@@ -41,7 +41,7 @@ try {
 
 const app = express();
 
-// ========== MIDDLEWARE ==========
+//   MIDDLEWARE  
 app.use(cors({
     origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -50,7 +50,7 @@ app.use(cors({
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// ========== M-PESA CONFIGURATION ==========
+//   M-PESA CONFIGURATION  
 const consumerKey = process.env.MPESA_CONSUMER_KEY;
 const consumerSecret = process.env.MPESA_CONSUMER_SECRET;
 const shortcode = process.env.MPESA_SHORTCODE || "174379";
@@ -62,7 +62,7 @@ console.log("   Consumer Key:", consumerKey ? "✅ Set" : "❌ Missing");
 console.log("   Shortcode:", shortcode);
 console.log("   Callback URL:", callbackUrl);
 
-// ========== HELPER FUNCTIONS ==========
+//   HELPER FUNCTIONS  
 
 // Generate access token
 async function getAccessToken() {
@@ -131,7 +131,7 @@ function generateTimestampAndPassword() {
     return { timestamp, password };
 }
 
-//  DEBUG ENDPOINT (MUST BE BEFORE OTHER ROUTES)
+// DEBUG ENDPOINT (MUST BE BEFORE OTHER ROUTES)
 app.get("/debug", async (req, res) => {
     try {
         console.log("🔍 DEBUG ENDPOINT CALLED");
@@ -199,7 +199,7 @@ app.get("/debug", async (req, res) => {
     }
 });
 
-//ROUTES
+// ROUTES
 
 // Root endpoint
 app.get("/", (req, res) => {
@@ -213,7 +213,8 @@ app.get("/", (req, res) => {
             health: "/health",
             test: "/test",
             stkPush: "POST /mpesa/stkpush",
-            callback: "POST /mpesa/callback"
+            callback: "POST /mpesa/callback",
+            paymentStatus: "GET /api/payment/:transactionId"
         }
     });
 });
@@ -353,7 +354,8 @@ app.post("/mpesa/stkpush", async (req, res) => {
                         merchantRequestId: response.data.MerchantRequestID,
                         timestamp: new Date().toISOString(),
                         litresPurchased: paymentAmount,
-                        processed: false
+                        processed: false,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp()
                     };
 
                     await db.collection("payments").add(paymentData);
@@ -412,6 +414,34 @@ app.post("/mpesa/callback", async (req, res) => {
             console.log(`Result Code: ${stkCallback.ResultCode}`);
             console.log(`CheckoutRequestID: ${stkCallback.CheckoutRequestID}`);
 
+            // Extract receipt number if payment successful
+            let receiptNumber = null;
+            let amount = null;
+            let phone = null;
+            
+            if (stkCallback.ResultCode === 0 && stkCallback.CallbackMetadata) {
+                const metadata = stkCallback.CallbackMetadata.Item;
+                
+                // Extract receipt number
+                const receiptItem = metadata.find(item => item.Name === "MpesaReceiptNumber");
+                if (receiptItem) {
+                    receiptNumber = receiptItem.Value;
+                    console.log(`Receipt Number: ${receiptNumber}`);
+                }
+                
+                // Extract amount
+                const amountItem = metadata.find(item => item.Name === "Amount");
+                if (amountItem) {
+                    amount = amountItem.Value;
+                }
+                
+                // Extract phone
+                const phoneItem = metadata.find(item => item.Name === "PhoneNumber");
+                if (phoneItem) {
+                    phone = phoneItem.Value;
+                }
+            }
+
             // Update Firestore if available
             if (db && stkCallback.CheckoutRequestID) {
                 try {
@@ -423,13 +453,50 @@ app.post("/mpesa/callback", async (req, res) => {
                         const paymentDoc = paymentsQuery.docs[0];
                         const status = stkCallback.ResultCode === 0 ? "Success" : "Failed";
 
-                        await paymentDoc.ref.update({
+                        const updateData = {
                             status: status,
-                            callbackData: stkCallback,
-                            updatedAt: new Date().toISOString()
-                        });
+                            receiptNumber: receiptNumber,
+                            callbackData: req.body,
+                            updatedAt: new Date().toISOString(),
+                            processed: status === "Success"
+                        };
 
-                        console.log(`✅ Payment updated: ${status}`);
+                        // Add additional metadata if available
+                        if (amount) updateData.actualAmount = amount;
+                        if (phone) updateData.actualPhone = phone;
+
+                        await paymentDoc.ref.update(updateData);
+
+                        console.log(`✅ Payment updated: ${status} with receipt: ${receiptNumber}`);
+                        
+                        // If payment was successful, also update water usage or create a transaction record
+                        if (status === "Success" && paymentDoc.data().meterNumber) {
+                            const paymentData = paymentDoc.data();
+                            
+                            // Create a transaction record
+                            await db.collection("transactions").add({
+                                userId: paymentData.userId,
+                                meterNumber: paymentData.meterNumber,
+                                amount: amount || paymentData.amount,
+                                receiptNumber: receiptNumber,
+                                transactionId: stkCallback.CheckoutRequestID,
+                                status: "completed",
+                                timestamp: admin.firestore.FieldValue.serverTimestamp()
+                            });
+                            
+                            console.log(`✅ Transaction record created for meter: ${paymentData.meterNumber}`);
+                        }
+                    } else {
+                        // Create a new record if not found
+                        await db.collection("payments").add({
+                            transactionId: stkCallback.CheckoutRequestID,
+                            status: stkCallback.ResultCode === 0 ? "Success" : "Failed",
+                            receiptNumber: receiptNumber,
+                            callbackData: req.body,
+                            timestamp: new Date().toISOString(),
+                            createdAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+                        console.log('💾 New payment record created from callback');
                     }
                 } catch (firebaseError) {
                     console.error('Firebase update error:', firebaseError.message);
@@ -452,10 +519,93 @@ app.post("/mpesa/callback", async (req, res) => {
     }
 });
 
-// Check payment status
+// Check payment status endpoint
 app.get("/api/payment/:transactionId", async (req, res) => {
     try {
         const { transactionId } = req.params;
+
+        console.log(`🔍 Checking payment status for transaction: ${transactionId}`);
+
+        if (!db) {
+            return res.status(500).json({
+                success: false,
+                error: "Database not connected"
+            });
+        }
+
+        // Query by transactionId (CheckoutRequestID)
+        const paymentsQuery = await db.collection("payments")
+            .where("transactionId", "==", transactionId)
+            .limit(1)
+            .get();
+
+        if (paymentsQuery.empty) {
+            // Try querying by merchantRequestId as fallback
+            const merchantQuery = await db.collection("payments")
+                .where("merchantRequestId", "==", transactionId)
+                .limit(1)
+                .get();
+                
+            if (merchantQuery.empty) {
+                return res.status(404).json({
+                    success: false,
+                    error: "Payment not found"
+                });
+            }
+            
+            const paymentDoc = merchantQuery.docs[0];
+            const paymentData = paymentDoc.data();
+            
+            // Add status message based on status
+            let statusMessage = "Payment pending";
+            if (paymentData.status === "Success") {
+                statusMessage = "Payment completed successfully";
+            } else if (paymentData.status === "Failed") {
+                statusMessage = "Payment failed";
+            }
+            
+            return res.json({
+                success: true,
+                payment: {
+                    id: paymentDoc.id,
+                    ...paymentData,
+                    statusMessage: statusMessage
+                }
+            });
+        }
+
+        const paymentDoc = paymentsQuery.docs[0];
+        const paymentData = paymentDoc.data();
+        
+        // Add status message based on status
+        let statusMessage = "Payment pending";
+        if (paymentData.status === "Success") {
+            statusMessage = "Payment completed successfully";
+        } else if (paymentData.status === "Failed") {
+            statusMessage = "Payment failed";
+        }
+
+        res.json({
+            success: true,
+            payment: {
+                id: paymentDoc.id,
+                ...paymentData,
+                statusMessage: statusMessage
+            }
+        });
+    } catch (error) {
+        console.error("❌ Payment status error:", error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Get all payments for a user
+app.get("/api/payments/user/:userId", async (req, res) => {
+    try {
+        const { userId } = req.params;
 
         if (!db) {
             return res.status(500).json({
@@ -465,28 +615,25 @@ app.get("/api/payment/:transactionId", async (req, res) => {
         }
 
         const paymentsQuery = await db.collection("payments")
-            .where("transactionId", "==", transactionId)
+            .where("userId", "==", userId)
+            .orderBy("timestamp", "desc")
+            .limit(50)
             .get();
 
-        if (paymentsQuery.empty) {
-            return res.status(404).json({
-                success: false,
-                error: "Payment not found"
+        const payments = [];
+        paymentsQuery.forEach(doc => {
+            payments.push({
+                id: doc.id,
+                ...doc.data()
             });
-        }
-
-        const paymentDoc = paymentsQuery.docs[0];
-        const paymentData = paymentDoc.data();
+        });
 
         res.json({
             success: true,
-            payment: {
-                id: paymentDoc.id,
-                ...paymentData
-            }
+            payments: payments
         });
     } catch (error) {
-        console.error("Payment status error:", error);
+        console.error("❌ Error fetching user payments:", error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -494,7 +641,7 @@ app.get("/api/payment/:transactionId", async (req, res) => {
     }
 });
 
-// ========== START SERVER ==========
+//   START SERVER  
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, "0.0.0.0", () => {
@@ -502,4 +649,5 @@ app.listen(PORT, "0.0.0.0", () => {
     console.log(`📡 Callback URL: ${callbackUrl}`);
     console.log(`🔧 Debug endpoint: http://localhost:${PORT}/debug`);
     console.log(`💡 Test phone: 254708374149, PIN: 1234`);
+    console.log(`📊 Payment status endpoint: GET /api/payment/:transactionId`);
 });

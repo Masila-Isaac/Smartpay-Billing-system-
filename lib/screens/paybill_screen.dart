@@ -1,8 +1,9 @@
 import 'dart:async';
-
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:http/http.dart' as http;
 import 'package:smartpay/model/county.dart' show County;
 import 'package:smartpay/services/county_payment_factory.dart';
 import 'package:smartpay/config/counties.dart';
@@ -56,6 +57,9 @@ class _PayBillScreenState extends State<PayBillScreen> {
   double _waterRate = 1.0;
   double _litresToPurchase = 0.0;
 
+  // API Base URL
+  final String apiBaseUrl = 'https://smartpay-billing.onrender.com';
+
   @override
   void initState() {
     super.initState();
@@ -86,8 +90,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
       _county = loadedCounty;
 
       try {
-        if (_county!.theme != null &&
-            _county!.theme['primaryColor'] != null &&
+        if (_county!.theme['primaryColor'] != null &&
             _county!.theme['primaryColor'] is String) {
           final colorStr = _county!.theme['primaryColor'] as String;
           _primaryColor = Color(int.parse(colorStr.replaceFirst('#', '0xFF')));
@@ -187,15 +190,15 @@ class _PayBillScreenState extends State<PayBillScreen> {
       _paymentService = CountyPaymentFactory.getService(
         widget.countyCode,
         _selectedPaymentMethod,
-      );
+      ) as CountyPaymentService;
     } catch (e) {
       debugPrint('Error creating payment service: $e');
-      _paymentService = _createMockPaymentService();
+      _paymentService = _createRealPaymentService();
     }
   }
 
-  CountyPaymentService _createMockPaymentService() {
-    return _MockCountyPaymentService();
+  CountyPaymentService _createRealPaymentService() {
+    return _RealCountyPaymentService(apiBaseUrl: apiBaseUrl);
   }
 
   Future<void> _testServerConnection() async {
@@ -658,7 +661,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
           _buildTextField(
             label: 'Amount (KES)',
             controller: amountController,
-            hintText: 'e.g. 10, 50, 100, 500, 1000',
+            hintText: 'e.g. 5, 10, 50, 100',
             icon: Icons.attach_money_outlined,
             keyboardType: TextInputType.number,
             onChanged: _updateLitresCalculation,
@@ -877,7 +880,8 @@ class _PayBillScreenState extends State<PayBillScreen> {
               ),
             ),
           ],
-          if (_mpesaReceiptNumber != null) ...[
+          if (_mpesaReceiptNumber != null &&
+              _mpesaReceiptNumber!.isNotEmpty) ...[
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.all(8),
@@ -1123,11 +1127,6 @@ class _PayBillScreenState extends State<PayBillScreen> {
       return;
     }
 
-    if (amount < 10) {
-      _showErrorDialog('Minimum payment amount is KES 10');
-      return;
-    }
-
     try {
       if (!_paymentService.isValidPhone(phone)) {
         _showErrorDialog(
@@ -1154,6 +1153,19 @@ class _PayBillScreenState extends State<PayBillScreen> {
             Text('Meter: $meterNumber'),
             Text('County: ${_county!.name}'),
             const SizedBox(height: 16),
+            if (amount < 10)
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange[100],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'Note: Amount is less than KES 10',
+                  style: TextStyle(color: Colors.orange[800]),
+                ),
+              ),
+            const SizedBox(height: 8),
             const Text(
               'You will receive a payment prompt on your phone to complete the payment.',
               style: TextStyle(color: Colors.grey),
@@ -1213,6 +1225,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
           _paymentCompleted = true;
           _paymentStatus = 'pending';
           _litresPurchased = litres;
+          _isLoading = false;
         });
 
         // Start checking payment status periodically
@@ -1231,6 +1244,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
         }
       } else {
         // Something went wrong with STK push
+        setState(() => _isLoading = false);
         throw Exception(
             result['error']?.toString() ?? 'Failed to send STK push');
       }
@@ -1270,8 +1284,11 @@ class _PayBillScreenState extends State<PayBillScreen> {
 
     try {
       debugPrint('🔄 Checking payment status for: $_paymentReference');
-      final statusResult =
-          await _paymentService.checkPaymentStatus(_paymentReference!);
+
+      // Add timeout to prevent hanging
+      final statusResult = await _paymentService
+          .checkPaymentStatus(_paymentReference!)
+          .timeout(const Duration(seconds: 10));
 
       debugPrint('🔄 Payment status result: $statusResult');
 
@@ -1283,7 +1300,7 @@ class _PayBillScreenState extends State<PayBillScreen> {
         setState(() {
           _paymentStatus = newStatus;
           _paymentMessage = newMessage;
-          if (receiptNumber != null) {
+          if (receiptNumber != null && receiptNumber.isNotEmpty) {
             _mpesaReceiptNumber = receiptNumber;
           }
         });
@@ -1301,31 +1318,46 @@ class _PayBillScreenState extends State<PayBillScreen> {
               amount: amount,
               county: _county!,
             );
+
+            debugPrint('✅ Water usage updated successfully');
           } catch (e) {
-            debugPrint('Water usage update error: $e');
+            debugPrint('❌ Water usage update error: $e');
           }
 
           _paymentStatusTimer?.cancel();
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Payment completed successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                    'Payment completed successfully! Receipt: $_mpesaReceiptNumber'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+          }
         } else if (newStatus == 'failed' || newStatus == 'cancelled') {
           _paymentStatusTimer?.cancel();
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Payment $newStatus. Please try again.'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Payment $newStatus. Please try again.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         }
       }
     } catch (e) {
-      debugPrint('Status check error: $e');
+      debugPrint('❌ Status check error: $e');
+
+      // Don't cancel timer on network errors, just log and continue
+      if (mounted) {
+        setState(() {
+          _paymentMessage = 'Checking status... (${e.toString()})';
+        });
+      }
     }
   }
 
@@ -1467,6 +1499,20 @@ class _PayBillScreenState extends State<PayBillScreen> {
 
         debugPrint('✅ New water usage document created');
       }
+
+      // Also save payment record
+      await firestore.collection('payments').add({
+        'userId': userId,
+        'meterNumber': meterNumber,
+        'amount': amount,
+        'litres': litresPurchased,
+        'countyCode': county.code,
+        'countyName': county.name,
+        'reference': _paymentReference,
+        'mpesaReceipt': _mpesaReceiptNumber,
+        'status': _paymentStatus,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
     } catch (e) {
       debugPrint('❌ Error updating water usage: $e');
       throw Exception('Failed to update water usage: $e');
@@ -1499,7 +1545,12 @@ class _PayBillScreenState extends State<PayBillScreen> {
   }
 }
 
-class _MockCountyPaymentService implements CountyPaymentService {
+// Real Payment Service Implementation
+class _RealCountyPaymentService implements CountyPaymentService {
+  final String apiBaseUrl;
+
+  _RealCountyPaymentService({required this.apiBaseUrl});
+
   @override
   Future<Map<String, dynamic>> initiatePayment({
     required String userId,
@@ -1508,30 +1559,159 @@ class _MockCountyPaymentService implements CountyPaymentService {
     required String meterNumber,
     required County county,
   }) async {
-    throw Exception('Payment service not available');
-  }
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$apiBaseUrl/mpesa/stkpush'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: json.encode({
+              'phoneNumber': phone,
+              'amount': amount,
+              'meterNumber': meterNumber,
+              'userId': userId,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
 
-  @override
-  Future<bool> testConnection() async {
-    return false;
+      debugPrint('📥 STK Push Response Status: ${response.statusCode}');
+      debugPrint('📥 STK Push Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data['success'] == true) {
+          return {
+            'status': 'pending',
+            'reference': data['CheckoutRequestID'] ?? data['MerchantRequestID'],
+            'mpesa_ref': data['CheckoutRequestID'],
+            'message':
+                data['message'] ?? data['CustomerMessage'] ?? 'STK Push sent',
+          };
+        } else {
+          throw Exception(data['error'] ?? 'Payment initiation failed');
+        }
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('❌ Initiate payment error: $e');
+      rethrow;
+    }
   }
 
   @override
   Future<Map<String, dynamic>> checkPaymentStatus(String transactionId) async {
-    return {'status': 'pending', 'message': 'Service not available'};
+    try {
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/api/payment/$transactionId'),
+        headers: {
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      debugPrint('📥 Status Check Response: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data['success'] == true && data['payment'] != null) {
+          final payment = data['payment'];
+
+          // Map server status to expected status
+          String status = 'pending';
+          if (payment['status'] == 'Success') {
+            status = 'successful';
+          } else if (payment['status'] == 'Failed') {
+            status = 'failed';
+          }
+
+          // Extract receipt number if available
+          String? receiptNumber;
+          if (payment['receiptNumber'] != null) {
+            receiptNumber = payment['receiptNumber'];
+          } else if (payment['callbackData'] != null &&
+              payment['callbackData']['stkCallback'] != null &&
+              payment['callbackData']['stkCallback']['CallbackMetadata'] !=
+                  null) {
+            final metadata = payment['callbackData']['stkCallback']
+                ['CallbackMetadata']['Item'];
+            if (metadata != null && metadata is List) {
+              final receiptItem = metadata.firstWhere(
+                (item) => item['Name'] == 'MpesaReceiptNumber',
+                orElse: () => null,
+              );
+              if (receiptItem != null) {
+                receiptNumber = receiptItem['Value']?.toString();
+              }
+            }
+          }
+
+          return {
+            'status': status,
+            'message': payment['statusMessage'] ??
+                'Payment status: ${payment['status']}',
+            'receipt_number': receiptNumber,
+          };
+        }
+      }
+
+      return {'status': 'pending', 'message': 'Status check pending'};
+    } catch (e) {
+      debugPrint('❌ Status check error: $e');
+      return {'status': 'pending', 'message': 'Status check failed: $e'};
+    }
+  }
+
+  @override
+  Future<bool> testConnection() async {
+    try {
+      final response = await http
+          .get(
+            Uri.parse('$apiBaseUrl/health'),
+          )
+          .timeout(const Duration(seconds: 5));
+
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('Connection test error: $e');
+      return false;
+    }
   }
 
   @override
   bool isValidPhone(String phone) {
-    return RegExp(r'^(\+?254|0)?[17][0-9]{8,9}$').hasMatch(phone);
+    final cleaned = phone.replaceAll(RegExp(r'\s+'), '');
+    final phoneRegex = RegExp(r'^(\+?254|0)?[17][0-9]{8,9}$');
+    return phoneRegex.hasMatch(cleaned);
   }
 
   @override
-  String getPaybillNumber() => '000000';
+  String getPaybillNumber() => '174379';
 
   @override
   String getTillNumber() => '000000';
 
   @override
   String getAccountPrefix() => 'WATER';
+}
+
+// Keep the CountyPaymentService interface if not already defined elsewhere
+abstract class CountyPaymentService {
+  Future<Map<String, dynamic>> initiatePayment({
+    required String userId,
+    required String phone,
+    required double amount,
+    required String meterNumber,
+    required County county,
+  });
+
+  Future<Map<String, dynamic>> checkPaymentStatus(String transactionId);
+  Future<bool> testConnection();
+  bool isValidPhone(String phone);
+  String getPaybillNumber();
+  String getTillNumber();
+  String getAccountPrefix();
 }
