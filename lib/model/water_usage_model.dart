@@ -1,16 +1,20 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 class WaterUsage {
   final String id;
   final String meterNumber;
   final String userId;
   final String phone;
-  final double waterUsed;
-  final double remainingUnits;
-  final double totalUnitsPurchased;
+  double waterUsed; // Made non-final so it can be updated
+  double remainingUnits;
+  double totalUnitsPurchased;
   final DateTime timestamp;
-  final DateTime lastUpdated;
-  final String status;
+  DateTime lastUpdated;
+  String status;
+
+  // Realtime Database reference
+  static final DatabaseReference _rtdb = FirebaseDatabase.instance.ref();
 
   WaterUsage({
     required this.id,
@@ -25,12 +29,13 @@ class WaterUsage {
     required this.status,
   });
 
+  // Factory constructor for creating from Firestore
   factory WaterUsage.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
 
     return WaterUsage(
       id: doc.id,
-      meterNumber: data['meterNumber'] ?? doc.id, // Use doc.id as fallback
+      meterNumber: data['meterNumber'] ?? doc.id,
       userId: data['userId'] ?? '',
       phone: data['phone'] ?? '',
       waterUsed: (data['waterUsed'] ?? 0).toDouble(),
@@ -43,10 +48,115 @@ class WaterUsage {
     );
   }
 
-  // ADDED: Factory method for QueryDocumentSnapshot
+  // Factory method for QueryDocumentSnapshot
   factory WaterUsage.fromQueryDoc(QueryDocumentSnapshot doc) {
     return WaterUsage.fromFirestore(doc);
   }
+
+  // ========== NEW METHODS FOR REALTIME DATABASE ==========
+
+  /// Fetch current water consumption from Realtime Database
+  static Future<double> getRealTimeWaterUsed(String meterNumber) async {
+    try {
+      // Assuming microcontroller sends data to path: /water_readings/{meterNumber}/consumption
+      // You can adjust this path based on how your microcontroller sends data
+      DatabaseReference ref =
+          _rtdb.child('water_readings').child(meterNumber).child('consumption');
+
+      DataSnapshot snapshot = await ref.get();
+
+      if (snapshot.exists) {
+        // Convert the value to double (assuming it's sent as number)
+        return double.tryParse(snapshot.value.toString()) ?? 0.0;
+      }
+
+      return 0.0;
+    } catch (e) {
+      print('Error fetching real-time water usage: $e');
+      return 0.0;
+    }
+  }
+
+  /// Listen to real-time updates from microcontroller
+  static Stream<double> listenToRealTimeWaterUsed(String meterNumber) {
+    // This will give you live updates whenever microcontroller sends new data
+    return _rtdb
+        .child('water_readings')
+        .child(meterNumber)
+        .child('consumption')
+        .onValue
+        .map((event) {
+      if (event.snapshot.exists) {
+        return double.tryParse(event.snapshot.value.toString()) ?? 0.0;
+      }
+      return 0.0;
+    });
+  }
+
+  /// Get water rate from Realtime Database
+  static Future<double> getWaterRate(String countyCode) async {
+    try {
+      // Assuming water rates are stored in Realtime DB at: /water_rates/{countyCode}
+      DatabaseReference ref = _rtdb.child('water_rates').child(countyCode);
+
+      DataSnapshot snapshot = await ref.get();
+
+      if (snapshot.exists) {
+        return double.tryParse(snapshot.value.toString()) ?? 1.0;
+      }
+
+      return 1.0; // Default rate
+    } catch (e) {
+      print('Error fetching water rate: $e');
+      return 1.0;
+    }
+  }
+
+  /// Update water usage based on real-time data
+  Future<void> updateFromRealTimeData() async {
+    try {
+      // Get current consumption from microcontroller
+      double currentConsumption = await getRealTimeWaterUsed(meterNumber);
+
+      // If consumption is greater than what we have recorded, update it
+      if (currentConsumption > waterUsed) {
+        double newlyUsed = currentConsumption - waterUsed;
+
+        // Update the object
+        waterUsed = currentConsumption;
+        remainingUnits = remainingUnits - newlyUsed;
+        lastUpdated = DateTime.now();
+
+        // Update status based on remaining units
+        if (remainingUnits <= 0) {
+          status = 'depleted';
+        } else if (remainingUnits < 10) {
+          status = 'warning';
+        } else {
+          status = 'active';
+        }
+
+        // Save the updated data back to Firestore
+        await saveToFirestore();
+      }
+    } catch (e) {
+      print('Error updating from real-time data: $e');
+    }
+  }
+
+  /// Save current data to Firestore
+  Future<void> saveToFirestore() async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('waterUsage')
+          .doc(meterNumber)
+          .update(toMap());
+    } catch (e) {
+      print('Error saving to Firestore: $e');
+    }
+  }
+
+  // ========== EXISTING METHODS (Keep all your original methods) ==========
 
   Map<String, dynamic> toMap() {
     return {
@@ -86,12 +196,12 @@ class WaterUsage {
       '${(remainingUnits / 1000).toStringAsFixed(2)} m³';
   String get formattedUsedM3 => '${(waterUsed / 1000).toStringAsFixed(2)} m³';
 
-  // ADDED: Formatted dates for display
+  // Formatted dates for display
   String get formattedLastUpdated {
     return '${lastUpdated.day}/${lastUpdated.month}/${lastUpdated.year}';
   }
 
-  // ADDED: Copy with method for updates
+  // Copy with method for updates
   WaterUsage copyWith({
     String? id,
     String? meterNumber,
