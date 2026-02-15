@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smartpay/model/payment_model.dart';
 import 'package:smartpay/screens/paybill_screen.dart';
-import 'package:firebase_database/firebase_database.dart';
 
 class WaterUsageScreen extends StatefulWidget {
   final String meterNumber;
