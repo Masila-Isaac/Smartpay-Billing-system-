@@ -4,9 +4,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class GoogleAuthService {
-  // Initialize Google Sign-In
   static final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: ['email'],
+    scopes: ['email', 'profile'],
   );
 
   static final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -16,22 +15,8 @@ class GoogleAuthService {
     try {
       print('🔵 Starting Google Sign-In...');
 
-      // Show loading indicator
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-
       // Trigger Google Sign-In flow
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-
-      // Dismiss loading
-      if (context.mounted) {
-        Navigator.of(context).pop();
-      }
 
       if (googleUser == null) {
         print('🟡 User cancelled Google Sign-In');
@@ -76,26 +61,62 @@ class GoogleAuthService {
 
       print('🔴 No user returned from Firebase');
       return null;
-    } catch (e) {
-      print('❌ Google Sign-In Error: $e');
+    } on FirebaseAuthException catch (e) {
+      print('❌ Firebase Auth Error: ${e.code} - ${e.message}');
 
-      // Show error to user
+      // Handle specific Firebase errors
+      String errorMessage = 'Failed to sign in with Google';
+      switch (e.code) {
+        case 'account-exists-with-different-credential':
+          errorMessage =
+              'An account already exists with the same email but different sign-in credentials.';
+          break;
+        case 'invalid-credential':
+          errorMessage = 'Invalid credential. Please try again.';
+          break;
+        case 'operation-not-allowed':
+          errorMessage =
+              'Google Sign-In is not enabled. Please contact support.';
+          break;
+        case 'user-disabled':
+          errorMessage = 'This account has been disabled.';
+          break;
+        case 'user-not-found':
+          errorMessage = 'No user found with this email.';
+          break;
+        case 'wrong-password':
+          errorMessage = 'Wrong password provided.';
+          break;
+        case 'invalid-email':
+          errorMessage = 'Invalid email address.';
+          break;
+        default:
+          errorMessage = 'Authentication failed: ${e.message}';
+      }
+
       if (context.mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Sign-In Error'),
-            content: Text('Failed to sign in with Google: ${e.toString()}'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
-              ),
-            ],
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red[400],
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
-      rethrow;
+      return null;
+    } catch (e) {
+      print('❌ Google Sign-In Error: $e');
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to sign in with Google: ${e.toString()}'),
+            backgroundColor: Colors.red[400],
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return null;
     }
   }
 
@@ -118,6 +139,8 @@ class GoogleAuthService {
         'updatedAt': FieldValue.serverTimestamp(),
         'userType': 'customer',
         'status': 'active',
+        'currentRemainingBalance': 0.0,
+        'currentWaterUsed': 0.0,
       });
 
       print('✅ User document created in Firestore');
@@ -158,6 +181,36 @@ class GoogleAuthService {
       });
 
       print('✅ Account details document created');
+
+      // Create water usage document
+      await _firestore.collection("waterUsage").doc(meterNumber).set({
+        "meterNumber": meterNumber,
+        "userId": user.uid,
+        "accountNumber": accountNumber,
+        "phone": user.phoneNumber ?? '',
+        "currentReading": 0.0,
+        "previousReading": 0.0,
+        "unitsConsumed": 0.0,
+        "remainingUnits": 0.0,
+        "totalUnitsPurchased": 0.0,
+        "lastReadingDate": FieldValue.serverTimestamp(),
+        "timestamp": FieldValue.serverTimestamp(),
+        "lastUpdated": FieldValue.serverTimestamp(),
+        "status": "active",
+      });
+
+      print('✅ Water usage document created');
+
+      // Create dashboard data
+      await _firestore.collection("dashboard_data").doc(user.uid).set({
+        "remainingBalance": 0.0,
+        "waterUsed": 0.0,
+        "totalPurchased": 0.0,
+        "meterNumber": meterNumber,
+        "lastUpdated": FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Dashboard data document created');
     } catch (e) {
       print('❌ Error creating user documents: $e');
       rethrow;

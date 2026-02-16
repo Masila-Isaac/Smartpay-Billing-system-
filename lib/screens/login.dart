@@ -81,12 +81,8 @@ class _LoginScreenState extends State<LoginScreen> {
         await _navigateToDashboard(user.uid);
       }
     } catch (e) {
-      if (mounted) {
-        _showSnackBar(
-          'Google Sign-In failed: ${e.toString()}',
-          Colors.red[400]!,
-        );
-      }
+      // Error is already handled in the service with a snackbar
+      print('Google Sign-In error: $e');
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
@@ -104,8 +100,10 @@ class _LoginScreenState extends State<LoginScreen> {
         final userData = userSnapshot.data() as Map<String, dynamic>;
 
         String meterNumber = userData['meterNumber'] ?? '';
-        String userName = userData['name'] ?? 'User';
-        String userEmail = userData['email'] ?? emailController.text.trim();
+        String userName = userData['name'] ??
+            (FirebaseAuth.instance.currentUser?.displayName ?? 'User');
+        String userEmail = userData['email'] ??
+            (FirebaseAuth.instance.currentUser?.email ?? '');
 
         print('✅ User data fetched:');
         print('   - Name: $userName');
@@ -120,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
           userEmail: userEmail,
         );
       } else {
-        // If not in users collection, try account_details
+        // Try other collections
         DocumentSnapshot accountSnapshot =
             await _firestore.collection('account_details').doc(userId).get();
 
@@ -128,9 +126,10 @@ class _LoginScreenState extends State<LoginScreen> {
           final accountData = accountSnapshot.data() as Map<String, dynamic>;
 
           String meterNumber = accountData['meterNumber'] ?? '';
-          String userName = accountData['name'] ?? 'User';
-          String userEmail =
-              accountData['email'] ?? emailController.text.trim();
+          String userName = accountData['name'] ??
+              (FirebaseAuth.instance.currentUser?.displayName ?? 'User');
+          String userEmail = accountData['email'] ??
+              (FirebaseAuth.instance.currentUser?.email ?? '');
 
           _navigateToDashboardScreen(
             userId: userId,
@@ -139,25 +138,26 @@ class _LoginScreenState extends State<LoginScreen> {
             userEmail: userEmail,
           );
         } else {
-          // Fallback - navigate with minimal data
-          _showSnackBar('User profile incomplete', Colors.orange);
+          // Fallback - create minimal document or use Firebase user data
+          final currentUser = FirebaseAuth.instance.currentUser;
           _navigateToDashboardScreen(
             userId: userId,
             meterNumber: '',
-            userName: 'User',
-            userEmail: emailController.text.trim(),
+            userName: currentUser?.displayName ?? 'User',
+            userEmail: currentUser?.email ?? '',
           );
         }
       }
     } catch (e) {
       print('❌ Error fetching user data: $e');
-      _showSnackBar('Error loading user data', Colors.red[400]!);
-      // Fallback navigation
+
+      // Fallback to Firebase user data
+      final currentUser = FirebaseAuth.instance.currentUser;
       _navigateToDashboardScreen(
         userId: userId,
         meterNumber: '',
-        userName: 'User',
-        userEmail: emailController.text.trim(),
+        userName: currentUser?.displayName ?? 'User',
+        userEmail: currentUser?.email ?? '',
       );
     }
   }
