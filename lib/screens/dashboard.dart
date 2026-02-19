@@ -8,6 +8,7 @@ import 'package:smartpay/model/county.dart' show County;
 import 'package:smartpay/screens/county_Settings.dart';
 import 'package:smartpay/screens/paybill_screen.dart';
 import 'package:smartpay/screens/viewreport.dart';
+import 'package:smartpay/screens/ml_prediction.dart';
 import 'package:smartpay/screens/water_Reading.dart';
 import 'package:smartpay/screens/water_usage_screen.dart';
 import 'package:smartpay/screens/profile_screen.dart';
@@ -45,7 +46,7 @@ class _DashboardState extends State<Dashboard> {
   String _accountNumber = '';
   bool _isLoading = true;
   bool _hasValidMeterNumber = false;
-  
+
   // County related variables
   late County _county;
   String _currentCountyCode = '';
@@ -65,7 +66,7 @@ class _DashboardState extends State<Dashboard> {
 
     _currentCountyCode = widget.countyCode;
     _loadCountyConfiguration(_currentCountyCode);
-    
+
     _hasValidMeterNumber = widget.meterNumber.isNotEmpty;
 
     if (_hasValidMeterNumber) {
@@ -74,7 +75,7 @@ class _DashboardState extends State<Dashboard> {
       print('⚠️ No valid meter number provided');
       setState(() => _isLoading = false);
     }
-    
+
     // Setup listeners after widgets are mounted
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _setupCountyChangeListener();
@@ -89,7 +90,7 @@ class _DashboardState extends State<Dashboard> {
           int.parse(_county.theme['primaryColor'].replaceFirst('#', '0xFF')));
       _secondaryColor = Color(
           int.parse(_county.theme['secondaryColor'].replaceFirst('#', '0xFF')));
-      
+
       print('✅ Loaded county: ${_county.name}');
       print('   - Primary Color: $_primaryColor');
       print('   - Water Rate: ${_county.waterRate}');
@@ -105,7 +106,7 @@ class _DashboardState extends State<Dashboard> {
 
   void _setupCountyChangeListener() {
     print('🎯 Setting up county change listener...');
-    
+
     _userCountySubscription = _firestore
         .collection('users')
         .doc(widget.userId)
@@ -114,28 +115,29 @@ class _DashboardState extends State<Dashboard> {
       if (snapshot.exists) {
         final data = snapshot.data() as Map<String, dynamic>;
         final newCounty = data['county'] as String?;
-        
+
         if (newCounty != null && newCounty != _currentCountyCode) {
           print('🔄 County changed from $_currentCountyCode to $newCounty');
-          
+
           // Update local county configuration
           _currentCountyCode = newCounty;
           _loadCountyConfiguration(newCounty);
-          
+
           // Update county in waterUsage document
           _updateWaterUsageCounty(newCounty);
-          
+
           // Update theme provider if available
           try {
-            final themeProvider = Provider.of<CountyThemeProvider>(context, listen: false);
+            final themeProvider =
+                Provider.of<CountyThemeProvider>(context, listen: false);
             themeProvider.updateCounty(newCounty);
           } catch (e) {
             print('⚠️ Could not update theme provider: $e');
           }
-          
+
           // Update payment methods based on new county
           _updatePaymentMethods(newCounty);
-          
+
           // Refresh UI
           if (mounted) {
             setState(() {});
@@ -150,8 +152,9 @@ class _DashboardState extends State<Dashboard> {
   void _setupThemeListener() {
     // Listen to theme changes from provider
     try {
-      final themeProvider = Provider.of<CountyThemeProvider>(context, listen: false);
-      
+      final themeProvider =
+          Provider.of<CountyThemeProvider>(context, listen: false);
+
       // Check if countyStream exists
       if (themeProvider.countyStream != null) {
         _themeSubscription = themeProvider.countyStream!.listen((county) {
@@ -159,7 +162,7 @@ class _DashboardState extends State<Dashboard> {
             print('🎨 Theme provider updated to: ${county.name}');
             _currentCountyCode = county.code;
             _loadCountyConfiguration(county.code);
-            
+
             if (mounted) {
               setState(() {});
             }
@@ -176,14 +179,14 @@ class _DashboardState extends State<Dashboard> {
   Future<void> _updateWaterUsageCounty(String countyCode) async {
     try {
       final county = CountyConfig.getCounty(countyCode);
-      
+
       await _firestore.collection('waterUsage').doc(widget.meterNumber).update({
         'countyCode': countyCode,
         'countyName': county.name,
         'waterRate': county.waterRate,
         'lastUpdated': FieldValue.serverTimestamp(),
       });
-      
+
       print('✅ Updated waterUsage county to: $countyCode');
     } catch (e) {
       print('❌ Error updating waterUsage county: $e');
@@ -194,17 +197,16 @@ class _DashboardState extends State<Dashboard> {
     try {
       final county = CountyConfig.getCounty(countyCode);
       final paymentMethods = county.paymentMethods;
-      
+
       print('💳 Updated payment methods for ${county.name}:');
       paymentMethods.forEach((key, value) {
         if (value['enabled'] == true) {
           print('   - ${value['name']}');
         }
       });
-      
+
       // You can update any payment-related state here
       // For example, update a payment provider in your app state
-      
     } catch (e) {
       print('❌ Error updating payment methods: $e');
     }
@@ -243,7 +245,8 @@ class _DashboardState extends State<Dashboard> {
 
         // Update county if it's different
         final countyCodeFromData = waterData['countyCode'] as String?;
-        if (countyCodeFromData != null && countyCodeFromData != _currentCountyCode) {
+        if (countyCodeFromData != null &&
+            countyCodeFromData != _currentCountyCode) {
           _currentCountyCode = countyCodeFromData;
           _loadCountyConfiguration(countyCodeFromData);
         }
@@ -455,6 +458,26 @@ class _DashboardState extends State<Dashboard> {
                         _navigateWithSlideTransition(
                           context,
                           ViewReport(meterNumber: widget.meterNumber),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _buildMenuButton(
+                      context,
+                      "ML Prediction",
+                      Icons.analytics_outlined,
+                      Colors.purple,
+                      () {
+                        String userId =
+                            "3qOFLEM9y8WB1EYM1ydB"; // Example user ID from your Firebase
+
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => UserPredictionScreen(
+                              userId: userId, // Pass the specific user ID
+                            ),
+                          ),
                         );
                       },
                     ),
