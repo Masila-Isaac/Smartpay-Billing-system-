@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smartpay/model/payment_model.dart';
@@ -8,11 +7,13 @@ import 'package:smartpay/screens/paybill_screen.dart';
 class WaterUsageScreen extends StatefulWidget {
   final String meterNumber;
   final String userId;
+  final String countyCode; // Added countyCode
 
   const WaterUsageScreen({
     super.key,
     required this.meterNumber,
     required this.userId,
+    required this.countyCode, // Make required
   });
 
   @override
@@ -28,6 +29,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
   double _remainingLitres = 0.0;
   double _totalLitresPurchased = 0.0;
   double _waterUsed = 0.0;
+  String _countyName = '';
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   StreamSubscription? _clientSubscription;
@@ -49,7 +51,6 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
   void _setupRealTimeListeners() {
     print('🎯 Setting up real-time listeners for meter: ${widget.meterNumber}');
 
-    // Add null check for meterNumber
     if (widget.meterNumber.isEmpty) {
       print('❌ Meter number is empty');
       setState(() => _isLoading = false);
@@ -97,6 +98,7 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
                 0.0)
             .toDouble();
         _waterUsed = (clientData['waterUsed'] ?? 0.0).toDouble();
+        _countyName = clientData['county']?.toString() ?? '';
 
         print('🔄 Client Data Updated:');
         print('   - Remaining Litres: $_remainingLitres');
@@ -106,11 +108,9 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
         _isLoading = false;
       });
 
-      // Publish data to shared location for Dashboard
       final remainingBalance = _calculateRemainingBalance();
       _publishToDashboardData(remainingBalance);
 
-      // Update animation
       if (_totalLitresPurchased > 0) {
         final remainingPercent =
             (_remainingLitres / _totalLitresPurchased).clamp(0.0, 1.0);
@@ -123,22 +123,21 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
 
   void _publishToDashboardData(double remainingBalance) {
     try {
-      // Add null check for userId
       if (widget.userId.isEmpty) {
         print('⚠️ User ID is empty, skipping dashboard update');
         return;
       }
 
-      // Publish to dashboard_data collection
       _firestore.collection('dashboard_data').doc(widget.userId).set({
         'remainingBalance': remainingBalance,
         'waterUsed': _waterUsed,
         'totalPurchased': _totalLitresPurchased,
         'meterNumber': widget.meterNumber,
+        'countyCode': widget.countyCode,
+        'countyName': _countyName,
         'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      // Also update users collection
       _firestore.collection('users').doc(widget.userId).update({
         'currentRemainingBalance': remainingBalance,
         'currentWaterUsed': _waterUsed,
@@ -206,13 +205,14 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
   }
 
   void _navigateToBuyUnits() {
-    // FIXED: Use the actual userId from widget, not empty string
+    // FIXED: Pass both userId and countyCode
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PayBillScreen(
           meterNumber: widget.meterNumber,
-          userId: widget.userId, countyCode: '', // FIX: Use widget.userId
+          userId: widget.userId,
+          countyCode: widget.countyCode, // Now passing countyCode
         ),
       ),
     );
@@ -350,7 +350,8 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Meter Number: ${widget.meterNumber}'),
-                      Text('User ID: ${widget.userId}'),
+                      Text('County Code: ${widget.countyCode}'),
+                      Text('County Name: $_countyName'),
                       const SizedBox(height: 8),
                       Text(
                           'Total Purchased: ${_totalLitresPurchased.toStringAsFixed(2)} litres'),
@@ -360,18 +361,6 @@ class _WaterUsageScreenState extends State<WaterUsageScreen>
                           'Remaining Balance: ${remainingBalance.toStringAsFixed(2)} litres'),
                       Text(
                           'Payment History: ${_paymentHistory.length} transactions'),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue[50],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          'Data published to Dashboard in real-time',
-                          style: TextStyle(fontSize: 12, color: Colors.blue),
-                        ),
-                      ),
                     ],
                   ),
                   actions: [

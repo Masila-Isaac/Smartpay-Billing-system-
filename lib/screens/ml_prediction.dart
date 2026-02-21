@@ -6,9 +6,9 @@ class UserPredictionScreen extends StatefulWidget {
   final String userId; // This would be the logged-in user's ID
 
   const UserPredictionScreen({
-    Key? key,
+    super.key,
     required this.userId,
-  }) : super(key: key);
+  });
 
   @override
   State<UserPredictionScreen> createState() => _UserPredictionScreenState();
