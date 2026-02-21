@@ -413,6 +413,7 @@ class _DashboardState extends State<Dashboard> {
                           WaterUsageScreen(
                             meterNumber: widget.meterNumber,
                             userId: widget.userId,
+                            countyCode: widget.countyCode,
                           ),
                         );
                       },

@@ -536,7 +536,7 @@ class _ViewReportState extends State<ViewReport>
                 ),
               ),
               const SizedBox(height: 8),
-              ..._waterUsageData.map(_buildWaterUsageItem).toList(),
+              ..._waterUsageData.map(_buildWaterUsageItem),
             ],
           ],
         ),
@@ -707,7 +707,8 @@ class _ViewReportState extends State<ViewReport>
       );
     }
 
-    final successfulPayments = _paymentData.where((p) => p.isSuccessful).toList();
+    final successfulPayments =
+        _paymentData.where((p) => p.isSuccessful).toList();
     final totalPaid = successfulPayments.fold<double>(
         0.0, (sum, payment) => sum + payment.amount);
     final totalUnits = successfulPayments.fold<double>(
@@ -784,7 +785,7 @@ class _ViewReportState extends State<ViewReport>
               ),
             ),
             const SizedBox(height: 8),
-            ..._paymentData.map(_buildPaymentItem).toList(),
+            ..._paymentData.map(_buildPaymentItem),
           ],
         ),
       ),
